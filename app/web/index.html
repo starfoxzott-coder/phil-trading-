@@ -1056,14 +1056,17 @@ function bindCards() {
 $("newTradeBtn").onclick = () => openTradeDialog({});
 
 /* ------------------------------------------------ interactive chart window */
-const ex = { open: false, sym: null, iv: "5", data: null, sig: null, from: 0, to: 0, hover: null, cache: {}, timer: 0,
+const ex = { open: false, sym: null, iv: "5", data: null, err: "", sig: null, from: 0, to: 0, hover: null, cache: {}, timer: 0,
   show: { vwap: true, ema: true, sig: true, mine: true, plan: true } };
 const EX_IVS = [["1", "1"], ["2", "2"], ["5", "5"], ["15", "15"], ["30", "30"], ["60", "1 Std"], ["D", "Tag"]];
 const EX_RANGES = { intraday: [["1", "1 Tag"], ["5", "5 Tage"], ["20", "20 Tage"], ["all", "Alles"]], D: [["66", "3 Mon."], ["130", "6 Mon."], ["260", "1 Jahr"], ["all", "2 Jahre"]] };
 try { const v = localStorage.getItem("phil.ex.iv"); if (v) ex.iv = v; } catch (e) {}
 
 function exBuildToolbar() {
-  $("exIv").innerHTML = `<span>Chart</span>` + EX_IVS.map(([v, l]) => `<button data-v="${v}" aria-pressed="${v === ex.iv}">${l}</button>`).join("") + `<span>${ex.iv === "D" || ex.iv === "60" ? "" : "Min"}</span>`;
+  // in the snapshot only some charts are stored: grey out the rest instead of opening an empty window
+  const have = (v) => !DEMO || !!(DEMO.charts && DEMO.charts[ex.sym + "|" + v]);
+  if (DEMO && !have(ex.iv)) ex.iv = "5";
+  $("exIv").innerHTML = `<span>Chart</span>` + EX_IVS.map(([v, l]) => `<button data-v="${v}" aria-pressed="${v === ex.iv}"${have(v) ? "" : ' disabled title="Nur in der lokal gestarteten App"'}>${l}</button>`).join("") + `<span>${ex.iv === "D" || ex.iv === "60" ? "" : "Min"}</span>`;
   $("exIv").querySelectorAll("button").forEach((b) => b.onclick = () => { ex.iv = b.dataset.v; try { localStorage.setItem("phil.ex.iv", ex.iv); } catch (e) {} exBuildToolbar(); exLoad(true); });
   const sm = (stateDoc && stateDoc.strategy.rules.bar_minutes) || (analysis && analysis.bar_minutes) || 5;
   $("exSig").innerHTML = `<span>Vorschläge</span>` + [1, 2, 5, 15, 30].map((m) => `<button data-m="${m}" aria-pressed="${m === +sm}">${m}</button>`).join("") + `<span>Min</span>`;
@@ -1089,7 +1092,7 @@ function openExplorer(sym) {
 }
 function closeExplorer() { ex.open = false; $("exWin").hidden = true; document.body.style.overflow = ""; clearInterval(ex.timer); }
 $("exClose").onclick = closeExplorer;
-$("exSym").onchange = () => { ex.sym = $("exSym").value; exLoad(true); exLoadSignals(); if (ex.sym !== current) select(ex.sym); };
+$("exSym").onchange = () => { ex.sym = $("exSym").value; exBuildToolbar(); exLoad(true); exLoadSignals(); if (ex.sym !== current) select(ex.sym); };
 document.addEventListener("keydown", (e) => {
   if (!ex.open) return;
   if (e.key === "Escape") closeExplorer();
@@ -1108,9 +1111,10 @@ async function exLoad(resetView, quiet) {
     let d = ex.cache[key];
     if (!d || quiet) {
       d = DEMO ? (DEMO.charts && DEMO.charts[key]) : await api(`/api/chart?symbol=${encodeURIComponent(ex.sym)}&iv=${ex.iv}`);
-      if (!d) throw new Error("Im Schnappschuss gibt es dieses Chart nicht. Lokal gestartet geht jede Kombination.");
+      if (!d) throw new Error("Für " + ex.sym + " mit " + (ex.iv === "D" ? "Tageskerzen" : ex.iv === "60" ? "Stundenkerzen" : ex.iv + "-Min-Kerzen") + " ist im Schnappschuss kein Chart gespeichert. Wähle 5 Min, 15 Min oder Tag. In der lokal gestarteten App geht jede Kombination.");
       ex.cache[key] = d;
     }
+    ex.err = "";
     const keepRight = ex.data && ex.to >= ex.data.bars.length - 1;
     const span = ex.to - ex.from;
     ex.data = d;
@@ -1118,7 +1122,7 @@ async function exLoad(resetView, quiet) {
     else if (keepRight) { ex.to = d.bars.length - 0.5 + 3; ex.from = ex.to - span; }
     if (!quiet) exInfoDefault();
     exDraw();
-  } catch (e) { $("exInfo").textContent = e.message; ex.data = null; exDraw(); }
+  } catch (e) { ex.err = e.message; ex.data = null; exInfoDefault(); exDraw(); }
 }
 async function exLoadSignals() {
   ex.sig = null;
@@ -1127,6 +1131,7 @@ async function exLoadSignals() {
   exInfoDefault(); exDraw();
 }
 function exInfoDefault() {
+  if (ex.err) { $("exInfo").textContent = ex.err; return; }  // keep the reason the chart is empty
   const s = ex.sig, d = ex.data;
   let t = d ? `${esc(ex.sym)} · ${d.bars.length.toLocaleString("de-DE")} Kerzen${d.days ? " · " + d.days + " Handelstage" : ""}. Mausrad = Zoom, Ziehen = Verschieben, Doppelklick = zurück.` : "";
   if (s && s.summary && s.summary.n) t += ` Vergangene Signale (${s.minutes}-Min-Kerzen, ${esc(s.rule)}): ${s.summary.n}× · Treffer ${(s.summary.win_rate * 100).toFixed(0)} % · Ø ${sgn(s.summary.avg_r)}R.`;
@@ -1179,7 +1184,17 @@ function exDraw() {
   const ctx = exCtx, dpr = window.devicePixelRatio || 1;
   const W = exCv.clientWidth, H = exCv.clientHeight;
   exCv.width = W * dpr; exCv.height = H * dpr; ctx.setTransform(dpr, 0, 0, dpr, 0, 0); ctx.clearRect(0, 0, W, H);
-  const d = ex.data; if (!d || !d.bars.length) return;
+  const d = ex.data;
+  if (!d || !d.bars.length) {  // empty state: say why, in the middle of the window
+    ctx.fillStyle = css("--muted"); ctx.font = `14px ${css("--f-ui")}`; ctx.textAlign = "center"; ctx.textBaseline = "middle";
+    const msg = ex.err || "Lädt " + (ex.sym || "") + "…", words = msg.split(" "), lines = [];
+    let cur = "";
+    for (const w of words) { if (ctx.measureText(cur + " " + w).width > Math.min(W - 40, 520) && cur) { lines.push(cur); cur = w; } else cur = cur ? cur + " " + w : w; }
+    lines.push(cur);
+    lines.forEach((l, k) => ctx.fillText(l, W / 2, H / 2 + (k - (lines.length - 1) / 2) * 20));
+    ctx.textAlign = "start";
+    return;
+  }
   const C = { fg: css("--fg"), muted: css("--muted"), grid: css("--grid"), up: css("--candle-up"), dn: css("--candle-dn"), win: css("--win"), winS: css("--win-soft"),
     loss: css("--loss"), lossS: css("--loss-soft"), accent: css("--accent"), wait: css("--wait"), panel: css("--panel"), range: css("--range") };
   const padL = 8, padR = W < 520 ? 58 : 70, padT = 22, padB = 30;
