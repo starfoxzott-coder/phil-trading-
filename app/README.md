@@ -154,6 +154,23 @@ nachjagen), Stop-Market-Verkauf, Take-Profit-Limit und spätestens 15:55 New Yor
   und am Handy im selben WLAN `http://<IP deines PCs>:8787` öffnen. Dann ist die App für alle
   im WLAN erreichbar, also nur im eigenen Netz so starten.
 
+## Fragen an die KI
+
+Der runde Knopf **„Frag die KI“** unten rechts (und „Frag die KI zu diesem Signal“ im
+Entscheidungskasten, „KI fragen“ an jedem eigenen Trade) öffnet ein Chat-Fenster. Die KI bekommt
+die Zahlen der App mit: Entscheidung, Checkliste, Plan mit Stop und Ziel, Simulation, die besten
+Stop/Ziel-Varianten, Indikatoren, Liquid-Positionierung, die letzten Kerzen, deine Bilanz und, wenn
+du von einem Trade aus fragst, diesen Trade mit den erkannten Fehlern. Auf Wunsch schickt sie das
+Chart als Bild mit. Nach anderen Tickern der Watchlist oder deinen übrigen Trades kann sie selbst
+nachsehen.
+
+- In der lokal gestarteten App läuft das über deinen Anthropic-Schlüssel (`pip install anthropic`,
+  `ANTHROPIC_API_KEY`), Modell Claude Opus 5.5.
+- Als geteilte Seite in Claude läuft es über das Claude-Konto der Person, die fragt; beim ersten
+  Mal fragt Claude um Erlaubnis.
+- Die Unterhaltung bleibt nur im Browser (die letzten 30 Nachrichten), „Neu“ löscht sie.
+- Die KI erklärt, was die Daten sagen. Sie ist keine Anlageberatung und garantiert nichts.
+
 ## Was die App entscheidet
 
 | Anzeige | Bedeutung |

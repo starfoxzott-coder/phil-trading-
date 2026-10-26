@@ -24,11 +24,16 @@ class ReviewError(Exception):
     pass
 
 
+NO_KEY = "Kein Anthropic-Schlüssel gefunden: ANTHROPIC_API_KEY setzen (oder `ant auth login`), dann die App neu starten"
+
+
 def _client():
     try:
         import anthropic
     except ImportError:
-        raise ReviewError("Für die Bildauswertung: pip install anthropic, dann die App neu starten")
+        raise ReviewError("Für KI-Funktionen: pip install anthropic, dann die App neu starten")
+    if not available():
+        raise ReviewError(NO_KEY)
     return anthropic, anthropic.Anthropic()
 
 
@@ -71,6 +76,10 @@ def _ask(content, schema, effort):
         raise ReviewError("Anthropic-API antwortet mit Fehler %s" % e.status_code)
     except anthropic.APIConnectionError:
         raise ReviewError("Keine Verbindung zur Anthropic-API")
+    except TypeError as e:
+        if "authentication" in str(e):
+            raise ReviewError(NO_KEY)
+        raise
     if resp.stop_reason == "refusal":
         raise ReviewError("Claude hat die Auswertung abgelehnt")
     text = next((b.text for b in resp.content if b.type == "text"), None)
@@ -142,6 +151,60 @@ def review_trade(t):
     out = _ask(blocks + [{"type": "text", "text": prompt}], REVIEW_SCHEMA, "medium")
     out["model"] = MODEL
     return out
+
+
+def ask(turns, images=()):
+    """Chat about trades: `turns` alternate user/assistant and end on a user turn.
+
+    The first user turn carries the coaching rules and the page's data (the page
+    builds it); images (data URLs, e.g. the chart or a broker screenshot) go with
+    the last user turn.
+    """
+    anthropic, client = _client()
+    msgs = []
+    src = turns if len(turns) <= 24 else [turns[0]] + turns[-22:]  # keep the rules turn, drop the oldest chat
+    for t in src:
+        role = "assistant" if t.get("role") == "assistant" else "user"
+        text = str(t.get("content") or "").strip()
+        if not text:
+            continue
+        if msgs and msgs[-1]["role"] == role:  # the API wants alternating turns
+            msgs[-1]["content"][0]["text"] += "\n\n" + text
+        else:
+            msgs.append({"role": role, "content": [{"type": "text", "text": text}]})
+    if not msgs or msgs[-1]["role"] != "user":
+        raise ReviewError("Keine Frage")
+    for url in list(images)[:3]:
+        m = trades.re.match(r"^data:(image/(?:png|jpeg|webp|gif));base64,(.+)$", url or "", trades.re.S)
+        if m:
+            msgs[-1]["content"].insert(0, {"type": "image", "source": {"type": "base64", "media_type": m.group(1), "data": m.group(2)}})
+    try:
+        resp = client.beta.messages.create(
+            model=MODEL,
+            max_tokens=16000,
+            betas=["server-side-fallback-2026-07-01"],
+            fallbacks="default",
+            output_config={"effort": "medium"},
+            messages=msgs,
+        )
+    except anthropic.AuthenticationError:
+        raise ReviewError("Kein gültiger Anthropic-Schlüssel: ANTHROPIC_API_KEY setzen oder `ant auth login`")
+    except anthropic.RateLimitError:
+        raise ReviewError("Anthropic-Limit erreicht, gleich noch einmal versuchen")
+    except anthropic.APIStatusError as e:
+        raise ReviewError("Anthropic-API antwortet mit Fehler %s" % e.status_code)
+    except anthropic.APIConnectionError:
+        raise ReviewError("Keine Verbindung zur Anthropic-API")
+    except TypeError as e:
+        if "authentication" in str(e):
+            raise ReviewError(NO_KEY)
+        raise
+    if resp.stop_reason == "refusal":
+        raise ReviewError("Claude hat die Frage abgelehnt")
+    text = "\n\n".join(b.text for b in resp.content if b.type == "text").strip()
+    if not text:
+        raise ReviewError("Leere Antwort von Claude")
+    return {"text": text, "truncated": resp.stop_reason == "max_tokens"}
 
 
 def available():

@@ -135,6 +135,14 @@ def review(trade_id):
     return trades.set_review(trade_id, r)
 
 
+def ask(body):
+    import claude_review
+    try:
+        return claude_review.ask(body.get("turns") or [], body.get("images") or [])
+    except claude_review.ReviewError as e:
+        raise ValueError(str(e))
+
+
 def read_shot(body):
     import claude_review
     name = trades.save_image("draft", body.get("image"), "read")
@@ -269,6 +277,8 @@ class Handler(BaseHTTPRequestHandler):
             return self._guard(lambda: open_trade(body))
         if p == "/api/read-shot":
             return self._guard(lambda: read_shot(body))
+        if p == "/api/ask":
+            return self._guard(lambda: ask(body))
         m = re.match(r"^/api/trades/([A-Za-z0-9_.-]+)/(close|image|rate|review|delete)$", p)
         if m:
             tid, op = m.groups()

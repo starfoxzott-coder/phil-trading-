@@ -167,6 +167,25 @@ select { font: inherit; padding: 6px 9px; border: 1px solid var(--line); border-
 .exbody { flex: 1; min-height: 0; background: var(--panel); border: 1px solid var(--line); border-radius: 8px; position: relative }
 .exbody canvas { width: 100%; height: 100%; display: block; touch-action: none; cursor: crosshair }
 #exInfo { font: 12px var(--f-num); color: var(--muted); min-height: 2.6em }
+.fab { position: fixed; z-index: 28; right: max(16px, env(safe-area-inset-right, 0px)); bottom: max(16px, env(safe-area-inset-bottom, 0px));
+  border-radius: 999px; padding: 12px 18px; box-shadow: 0 6px 20px rgba(0,0,0,.25) }
+.chatwin { position: fixed; z-index: 30; top: 0; right: 0; bottom: 0; width: min(440px, 100%); background: var(--panel); border-left: 1px solid var(--line);
+  display: flex; flex-direction: column; gap: 8px; box-shadow: -8px 0 30px rgba(0,0,0,.2);
+  padding: max(12px, env(safe-area-inset-top, 0px)) max(16px, env(safe-area-inset-right, 0px)) max(12px, env(safe-area-inset-bottom, 0px)) 16px }
+@media (max-width: 560px) { .chatwin { border-left: 0; padding-left: max(16px, env(safe-area-inset-left, 0px)) } }
+.chathead { display: flex; align-items: center; gap: 8px }
+.chathead h2 { margin: 0; font-size: 16px; font-weight: 800; font-stretch: 85%; text-transform: uppercase; flex: 1 }
+#chatCtx { font-size: 12.5px; color: var(--muted) }
+#chatLog { flex: 1; min-height: 0; overflow-y: auto; display: flex; flex-direction: column; gap: 8px; padding: 4px 2px }
+.msg { max-width: 92%; padding: 8px 12px; border-radius: 10px; font-size: 13.5px; line-height: 1.5; overflow-wrap: anywhere }
+.msg.user { align-self: flex-end; background: var(--accent); color: #fff; border-bottom-right-radius: 3px }
+.msg.assistant { align-self: flex-start; background: var(--bg); border: 1px solid var(--line); border-bottom-left-radius: 3px }
+.msg.err { color: var(--loss) }
+.msg p { margin: 0 0 6px } .msg p:last-child { margin: 0 } .msg ul { margin: 0 0 6px; padding-left: 18px }
+#chatSug { display: flex; flex-wrap: wrap; gap: 6px }
+.chip-btn { border: 1px solid var(--line); background: var(--bg); color: var(--fg); border-radius: 999px; padding: 4px 10px; font-size: 12px }
+.chatin { display: flex; gap: 8px; align-items: flex-end }
+.chatin textarea { flex: 1; resize: none; min-height: 42px; max-height: 140px }
 .exopen { position: absolute; top: 8px; right: 8px; font-size: 12px; padding: 4px 10px; z-index: 2 }
 .closeform { margin-top: 12px; border-top: 1px solid var(--line); padding-top: 12px }
 .tags { border: 0; padding: 0; margin: 10px 0 0; display: flex; flex-wrap: wrap; gap: 4px 14px; font-size: 12.5px }
@@ -311,6 +330,18 @@ td { padding: 6px 8px; border-bottom: 1px solid var(--line); vertical-align: top
   <div id="exInfo" role="status"></div>
 </div>
 
+<button class="btn fab" id="chatFab" title="Fragen zu Signalen und Trades stellen">Frag die KI</button>
+<aside class="chatwin" id="chatWin" hidden aria-label="Fragen an die KI">
+  <div class="chathead"><h2>Frag die KI</h2><button class="btn ghost" id="chatClear" title="Unterhaltung löschen">Neu</button><button class="btn ghost" id="chatClose">Schließen</button></div>
+  <div id="chatCtx"></div>
+  <div id="chatLog" aria-live="polite"></div>
+  <div id="chatSug"></div>
+  <label id="chatImgRow" class="note" style="margin:0;display:flex;gap:6px;align-items:center" for="chatImg"><input type="checkbox" id="chatImg" checked> Chart als Bild mitschicken</label>
+  <div class="chatin"><textarea id="chatIn" rows="2" placeholder="z. B. Warum liegt der Stop bei 345,56?"></textarea>
+    <button class="btn" id="chatSend">Senden</button><button class="btn ghost" id="chatStop" hidden>Stopp</button></div>
+  <p class="note" id="chatNote" style="margin:0"></p>
+</aside>
+
 <section id="view-learn" hidden>
   <div class="grid2" style="padding-top:16px">
     <div class="sec"><h2>Aktive Regel</h2><div id="lRule"></div></div>
@@ -410,7 +441,9 @@ function renderAnalysis() {
       ${a.quality ? `<span class="grade ${a.quality.grade}" title="Qualität" style="width:24px;height:24px;font-size:14px;vertical-align:-6px;margin-left:6px">${a.quality.grade}</span>` : ""}</div></div>
     <ul>${d.reasons.map((r) => `<li>${esc(r)}</li>`).join("") || "<li>Keine Auffälligkeiten</li>"}</ul>
     ${p && a.market_open ? `<div></div><div style="display:flex;flex-wrap:wrap;gap:8px;align-items:center"><button class="btn ${d.action === "KAUFEN" ? "" : "ghost"}" id="didBtn">Ich habe diesen Trade gemacht</button>
-      ${(a.my_trades || []).length ? `<span class="note" style="margin:0">${a.my_trades.length} Trade(s) von dir heute eingetragen</span>` : ""}</div>` : ""}`;
+      ${(a.my_trades || []).length ? `<span class="note" style="margin:0">${a.my_trades.length} Trade(s) von dir heute eingetragen</span>` : ""}</div>` : ""}
+    <div></div><div><button class="btn ghost" id="askBtn">Frag die KI zu diesem Signal</button></div>`;
+  $("askBtn").onclick = () => openChat(null);
   if ($("didBtn")) $("didBtn").onclick = () => openTradeDialog({ symbol: a.symbol, entry: a.order ? a.order.buy_limit : p.entry, shares: a.size.shares, stop: p.stop, target: p.target, fromPlan: true });
 
   if (p) {
@@ -1005,6 +1038,7 @@ function tradeCard(t) {
       ${t.status === "open" ? `<button class="btn" data-act="closeform">Trade abschließen</button><button class="btn ghost" data-act="auto">Automatisch aus Kursdaten</button>` : `
         <button class="btn ghost" data-act="rate" data-v="good">War gut</button><button class="btn ghost" data-act="rate" data-v="bad">War schlecht</button>
         <button class="btn ghost" data-act="review" ${mine.doc.claude ? "" : 'disabled title="Braucht pip install anthropic und einen Anthropic-Schlüssel"'}>Von Claude auswerten</button>`}
+      <button class="btn ghost" data-act="ask">KI fragen</button>
       <label class="btn ghost filebtn">Bild hinzufügen<input type="file" accept="image/*" capture="environment" data-act="img" hidden></label>
       <button class="btn ghost danger" data-act="del">Löschen</button>
     </div>
@@ -1037,6 +1071,7 @@ function bindCards() {
         else if (act === "auto") post("close", { auto: true });
         else if (act === "rate") post("rate", { rating: el.dataset.v });
         else if (act === "review") { el.disabled = true; el.textContent = "Claude wertet aus…"; await post("review"); }
+        else if (act === "ask") { const t = mine.doc.trades.find((x) => x.id === id); if (t && t.symbol !== current) await select(t.symbol); openChat({ trade: t }); }
         else if (act === "del") { if (el.dataset.sure) post("delete"); else { el.dataset.sure = "1"; el.textContent = "Wirklich löschen?"; } }
       };
     });
@@ -1379,6 +1414,165 @@ exCv.addEventListener("touchend", () => { exPinch = null; });
 window.addEventListener("resize", () => exDraw());
 
 $("exOpenBtn").onclick = () => openExplorer(current);
+
+/* ------------------------------------------------ ask the AI about a trade */
+// Two ways to reach Claude: inside a Claude viewer the page's own `sample`
+// capability (the viewer's account); in the local app the server's /api/ask
+// (your Anthropic key). The page keeps the conversation; each call sends it whole.
+const chat = { turns: [], ctx: null, busy: false, ctl: null, sample: undefined, canImages: false, canTools: false };
+const CHAT_RULES = `Du bist der Trading-Coach in der App "Phil Day-Trade" (US-Aktien, nur Long, Daytrading).
+Die App sucht Ausbrüche über die Eröffnungsspanne, setzt Stop und Ziel pro Signal (Simulation + echte vergangene Ausbrüche, nach Kosten),
+bewertet mit einer Checkliste (Pflichtpunkte + Qualität A/B/C) und stellt spätestens 15:55 New York glatt. R = Abstand Einstieg–Stop.
+Regeln für deine Antworten:
+- Antworte auf Deutsch, kurz und konkret (meist 3 bis 8 Sätze oder eine kurze Liste). Nenne Zahlen aus den Daten.
+- Nutze nur die Daten unten und die Bilder. Erfinde keine Kurse, News oder Ergebnisse. Fehlt etwas, sag es.
+- Unterscheide Entscheidung und Ergebnis: ein Verlust mit befolgtem Plan kann ein guter Trade sein.
+- Erkläre die Logik der App, wenn gefragt, und sag ehrlich, wenn die Statistik dünn ist (wenige Trades, kurze Historie).
+- Du gibst keine Garantien. Bei Fragen wie "soll ich kaufen" erkläre, was die Daten sagen, und erinnere einmal kurz daran,
+  dass die Entscheidung beim Nutzer liegt.
+- Einfaches Markdown ist erlaubt: **fett**, Listen mit "- ".`;
+
+async function chatBackend() {
+  if (chat.sample === undefined) {
+    chat.sample = null;
+    try { if (window.claude && window.claude.use) chat.sample = await window.claude.use("sample"); } catch (e) { chat.sample = null; }
+    if (chat.sample) {
+      try { const l = await chat.sample.limits(); chat.canImages = !!l.images; chat.canTools = !!l.tools; } catch (e) {}
+    } else if (!DEMO) chat.canImages = true;  // the local server sends images itself
+  }
+  if (chat.sample) return "sample";
+  if (!DEMO) return "server";
+  return null;
+}
+function compactAnalysis(a) {
+  if (!a) return null;
+  const pick = (o, ks) => o ? Object.fromEntries(ks.filter((k) => o[k] !== undefined).map((k) => [k, o[k]])) : null;
+  const tm = (t) => t ? fmtET(t) + " ET" : null;
+  return {
+    ticker: a.symbol, datum: a.date, jetzt_ny: a.now_et, kerzen_min: a.bar_minutes, markt_offen: a.market_open, kurs: a.price,
+    entscheidung: a.decision, qualitaet: a.quality, checkliste: (a.checks || []).map((c) => ({ punkt: c.label, ok: c.ok, pflicht: c.hard, info: c.detail || undefined })),
+    eroeffnungsspanne: a.opening_range && { hoch: a.opening_range.high, tief: a.opening_range.low },
+    plan: a.plan && { ...pick(a.plan, ["entry", "stop", "target", "target_r", "stop_kind"]), einstieg_zeit: tm(a.plan.entry_t), glattstellen: tm(a.plan.end_t) },
+    order: a.order, groesse: a.size, risiko_check: a.risk,
+    simulation: a.sim && pick(a.sim, ["p_target", "p_stop", "p_neither", "avg_r", "ev_hist", "n_hist", "hist_win", "cost_r", "ev_net", "ev_usd", "verdict"]),
+    stop_ziel_varianten: a.optimizer && a.optimizer.rows.filter((r) => r.valid && r.reachable).sort((x, y) => y.ev_net - x.ev_net).slice(0, 6)
+      .map((r) => ({ stop: r.stop_kind, ziel_r: r.target_r, erwartung_r: r.ev_net, ziel_zuerst: r.p_target })),
+    ergebnis_heute: a.result || null, historie_60_tage: a.history, indikatoren: a.indicators, perp: a.perp,
+    liquid_positionierung: a.intel && pick(a.intel, ["smart_long", "crowd_long", "read", "updated_at"]),
+    letzte_kerzen: (a.bars || []).slice(-24).map((b) => [fmtET(b[0]), b[1], b[2], b[3], b[4]]),
+    news: (a.news || []).slice(0, 4).map((n) => n.title),
+  };
+}
+function compactTrade(t) {
+  if (!t) return null;
+  const { images, ...rest } = t;
+  return { ...rest, bilder: (images || []).length };
+}
+function chatContextText() {
+  const c = chat.ctx || {};
+  const data = { signal: compactAnalysis(analysis) };
+  if (c.trade) data.mein_trade = compactTrade(c.trade);
+  if (mine.doc && mine.doc.summary && mine.doc.summary.n) data.meine_bilanz = mine.doc.summary;
+  if (ex.sig && ex.sig.symbol === (data.signal && data.signal.ticker)) data.vergangene_signale = { regel: ex.sig.rule, bilanz: ex.sig.summary, letzte: ex.sig.signals.slice(-8) };
+  return CHAT_RULES + "\n\nDATEN (JSON):\n" + JSON.stringify(data).slice(0, 60000);
+}
+function chatTools() {
+  // page functions Claude may call for tickers or trades that are not on screen
+  return [
+    { name: "ticker_analyse", description: "Liefert die aktuelle Analyse der App (Entscheidung, Plan mit Stop/Ziel, Checkliste, Simulation) für einen Ticker der Watchlist. Nutze sie, wenn nach einem anderen Ticker gefragt wird.",
+      inputSchema: { type: "object", properties: { symbol: { type: "string", description: "z. B. NVDA" } }, required: ["symbol"] },
+      async execute(input) { const s = String(input.symbol || "").toUpperCase(); return compactAnalysis(await api("/api/analyze?symbol=" + encodeURIComponent(s))); } },
+    { name: "meine_trades", description: "Liefert alle eingetragenen Trades des Nutzers (Kauf, Stop, Ziel, Ergebnis, erkannte Fehler, Bewertung) und seine Bilanz.",
+      async execute() { const d = await api("/api/trades"); return { bilanz: d.summary, trades: d.trades.slice(0, 20).map(compactTrade) }; } },
+  ];
+}
+function chatImageBlob() {
+  const cv = ex.open ? exCv : $("chart");
+  return new Promise((res) => { try { cv.toBlob((b) => res(b), "image/png"); } catch (e) { res(null); } });
+}
+function md(s) {
+  // tiny, safe Markdown: escape first, then bold, list lines, paragraphs
+  return esc(s).replace(/\*\*(.+?)\*\*/g, "<b>$1</b>").split(/\n{2,}/).map((p) => {
+    const lines = p.split("\n");
+    if (lines.every((l) => /^\s*[-•*] /.test(l))) return "<ul>" + lines.map((l) => "<li>" + l.replace(/^\s*[-•*] /, "") + "</li>").join("") + "</ul>";
+    return "<p>" + lines.join("<br>") + "</p>";
+  }).join("");
+}
+function chatRender() {
+  const box = $("chatLog");
+  box.innerHTML = chat.turns.length ? chat.turns.map((t, i) => `<div class="msg ${t.role}${t.err ? " err" : ""}">${t.role === "assistant" ? md(t.content || (chat.busy && i === chat.turns.length - 1 ? "Denkt nach…" : "")) : esc(t.content)}</div>`).join("")
+    : `<p class="muted" style="margin:0">Frag etwas zu diesem Signal oder zu deinem Trade. Die KI sieht die Zahlen der App${chat.canImages ? " und auf Wunsch das Chart als Bild" : ""}.</p>`;
+  box.scrollTop = box.scrollHeight;
+  $("chatSend").hidden = chat.busy; $("chatStop").hidden = !chat.busy;
+}
+function chatSetContext(ctx) {
+  chat.ctx = ctx;
+  const a = analysis;
+  $("chatCtx").innerHTML = ctx && ctx.trade ? `Kontext: dein Trade <b>${esc(ctx.trade.symbol)} ${esc(ctx.trade.date)} ${esc(ctx.trade.time)}</b> und das Signal von ${esc(a ? a.symbol : "")}`
+    : `Kontext: <b>${esc(a ? a.symbol : "–")}</b> · ${esc(a ? a.decision.action : "")} · ${a ? a.bar_minutes : 5}-Min-Kerzen`;
+  const sug = ctx && ctx.trade ? ["Was habe ich bei diesem Trade falsch gemacht?", "War mein Stop sinnvoll gesetzt?", "Was hätte der Plan der App anders gemacht?"]
+    : ["Warum sagt die App das?", "Warum genau dieser Stop und dieses Ziel?", "Was müsste passieren, damit es ein Kauf wird?", "Wie zuverlässig ist diese Prognose?"];
+  $("chatSug").innerHTML = sug.map((q) => `<button class="chip-btn">${esc(q)}</button>`).join("");
+  $("chatSug").querySelectorAll("button").forEach((b) => b.onclick = () => { $("chatIn").value = b.textContent; chatSend(); });
+}
+async function openChat(ctx) {
+  $("chatWin").hidden = false; $("chatFab").hidden = true;
+  chatSetContext(ctx || null);
+  const be = await chatBackend();
+  $("chatImgRow").hidden = !chat.canImages;
+  $("chatNote").textContent = be === "sample" ? "Läuft über dein Claude-Konto (beim ersten Mal fragt Claude um Erlaubnis)."
+    : be === "server" ? ((mine.doc && mine.doc.claude) ? "Läuft über deinen Anthropic-Schlüssel." : "Braucht pip install anthropic und ANTHROPIC_API_KEY, dann die App neu starten.")
+    : "Fragen gehen hier nicht: Öffne die Seite in Claude oder starte die App lokal.";
+  $("chatIn").disabled = $("chatSend").disabled = !be;
+  chatRender(); $("chatIn").focus();
+}
+function closeChat() { $("chatWin").hidden = true; $("chatFab").hidden = false; }
+async function chatSend() {
+  const q = $("chatIn").value.trim();
+  if (!q || chat.busy) return;
+  const be = await chatBackend(); if (!be) return;
+  $("chatIn").value = "";
+  chat.turns.push({ role: "user", content: q });
+  const input = [{ role: "user", content: chatContextText() }, ...chat.turns.filter((t) => !t.err && t.content).map((t) => ({ role: t.role, content: t.content }))];
+  const reply = { role: "assistant", content: "" };
+  chat.turns.push(reply); chat.busy = true; chatRender();
+  const withImg = chat.canImages && $("chatImg").checked;
+  const img = withImg ? await chatImageBlob() : null;
+  try {
+    if (be === "sample") {
+      chat.ctl = new AbortController();
+      const opts = { cache: false, signal: chat.ctl.signal, onText: ({ text }) => { reply.content = text; chatRender(); } };
+      if (img) opts.images = [img];
+      if (chat.canTools) opts.tools = chatTools();
+      const r = await chat.sample(input, opts);
+      reply.content = r.text + (r.truncated ? "\n\n(Antwort abgeschnitten, frag nach dem Rest.)" : "");
+    } else {
+      const images = img ? [await new Promise((res) => { const fr = new FileReader(); fr.onload = () => res(fr.result); fr.readAsDataURL(img); })] : [];
+      const r = await api("/api/ask", { turns: input, images });
+      reply.content = r.text + (r.truncated ? "\n\n(Antwort abgeschnitten, frag nach dem Rest.)" : "");
+    }
+  } catch (e) {
+    const code = e && e.code;
+    if (code === "cancelled") reply.content = (e.text || "") + (e.text ? "\n\n(gestoppt)" : "Gestoppt.");
+    else {
+      reply.err = true;
+      reply.content = code === "not_granted" || code === "sampling_disabled" ? "Claude darf auf dieser Seite nicht antworten (nicht erlaubt). Du kannst es in den Berechtigungen der Seite ändern."
+        : code === "rate_limited" ? "Gerade zu viele Fragen. Bitte in einer Minute noch einmal."
+        : code === "refused" ? "Diese Frage hat Claude abgelehnt. Formuliere sie anders."
+        : (e && e.message) || "Die Frage ging nicht durch.";
+    }
+  } finally {
+    chat.busy = false; chat.ctl = null; chatRender();
+    try { localStorage.setItem("phil.chat", JSON.stringify(chat.turns.filter((t) => !t.err).slice(-30))); } catch (e) {}
+  }
+}
+try { const saved = JSON.parse(localStorage.getItem("phil.chat") || "[]"); if (Array.isArray(saved)) chat.turns = saved.filter((t) => t && t.role && t.content); } catch (e) {}
+$("chatFab").onclick = () => openChat(null);
+$("chatClose").onclick = closeChat;
+$("chatSend").onclick = chatSend;
+$("chatStop").onclick = () => chat.ctl && chat.ctl.abort();
+$("chatClear").onclick = () => { chat.turns = []; try { localStorage.removeItem("phil.chat"); } catch (e) {} chatRender(); };
+$("chatIn").addEventListener("keydown", (e) => { if (e.key === "Enter" && !e.shiftKey) { e.preventDefault(); chatSend(); } });
 
 /* ------------------------------------------------ bar length */
 function markTF(m) { $("tf").querySelectorAll("button").forEach((b) => b.setAttribute("aria-pressed", String(+b.dataset.m === +m))); }
