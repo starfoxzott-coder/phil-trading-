@@ -78,6 +78,14 @@ def to_et(ts):
     return (utc + datetime.timedelta(hours=et_offset_hours(utc))).replace(tzinfo=None)
 
 
+def parse_iso_ts(text):
+    """Epoch seconds of an ISO time like 2026-10-26T18:16:59+00:00, or None."""
+    try:
+        return int(datetime.datetime.fromisoformat(str(text).replace("Z", "+00:00")).timestamp())
+    except (TypeError, ValueError):
+        return None
+
+
 def et_now(now_ts=None):
     return to_et(now_ts if now_ts is not None else time.time())
 

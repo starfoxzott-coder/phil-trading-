@@ -167,6 +167,16 @@ select { font: inherit; padding: 6px 9px; border: 1px solid var(--line); border-
 .exbody { flex: 1; min-height: 0; background: var(--panel); border: 1px solid var(--line); border-radius: 8px; position: relative }
 .exbody canvas { width: 100%; height: 100%; display: block; touch-action: none; cursor: crosshair }
 #exInfo { font: 12px var(--f-num); color: var(--muted); min-height: 2.6em }
+.pre { white-space: pre-wrap; font: 11.5px/1.45 var(--f-num); background: var(--bg); border: 1px solid var(--line); border-radius: 6px; padding: 10px; overflow-x: auto; max-height: 420px; overflow-y: auto; margin: 8px 0 0 }
+.chip-btn[aria-pressed="true"] { background: var(--accent); color: #fff; border-color: var(--accent) }
+#toasts { position: fixed; z-index: 40; top: max(12px, env(safe-area-inset-top, 0px)); left: 50%; transform: translateX(-50%); display: flex; flex-direction: column; gap: 6px; width: min(460px, calc(100% - 32px)) }
+.toast { background: var(--fg); color: var(--bg); padding: 10px 14px; border-radius: 8px; font-size: 13.5px; box-shadow: 0 6px 20px rgba(0,0,0,.25) }
+.mkt { display: grid; grid-template-columns: repeat(2, minmax(0, 1fr)); gap: 16px; padding-top: 16px }
+.mkt .wide { grid-column: 1 / -1 }
+@media (max-width: 720px) { .mkt { grid-template-columns: minmax(0, 1fr) } }
+.row { display: flex; flex-wrap: wrap; gap: 8px; align-items: center }
+#skHits, #skCong, #skOrb { max-height: 460px; overflow: auto }
+#skHits thead th, #skCong thead th, #skOrb thead th { position: sticky; top: 0; background: var(--panel) }
 .fab { position: fixed; z-index: 28; right: max(16px, env(safe-area-inset-right, 0px)); bottom: max(16px, env(safe-area-inset-bottom, 0px));
   border-radius: 999px; padding: 12px 18px; box-shadow: 0 6px 20px rgba(0,0,0,.25) }
 .chatwin { position: fixed; z-index: 30; top: 0; right: 0; bottom: 0; width: min(440px, 100%); background: var(--panel); border-left: 1px solid var(--line);
@@ -227,6 +237,7 @@ td { padding: 6px 8px; border-bottom: 1px solid var(--line); vertical-align: top
   <span class="spacer"></span>
   <nav class="tabs" role="tablist">
     <button role="tab" id="tab-desk" aria-selected="true">Trading</button>
+    <button role="tab" id="tab-market" aria-selected="false">Markt</button>
     <button role="tab" id="tab-mine" aria-selected="false">Meine Trades</button>
     <button role="tab" id="tab-learn" aria-selected="false">Lernen</button>
   </nav>
@@ -270,11 +281,41 @@ td { padding: 6px 8px; border-bottom: 1px solid var(--line); vertical-align: top
       <div class="sec"><h2>Größe &amp; Risiko-Check</h2><div id="sizeBox"></div></div>
       <div class="sec"><h2>Diese Regel auf diesem Ticker, letzte 60 Tage</h2><div id="hist"></div></div>
       <div class="sec"><h2>Markt-Kontext · Liquid &amp; Indikatoren</h2><div id="ctxBox"></div></div>
+      <div class="sec" style="grid-column:1/-1"><h2>Was die Skills zu diesem Signal sagen</h2><div id="skillBox"></div>
+        <button class="btn ghost" id="skCheckBtn" style="margin-top:10px">Mit allen Skills prüfen</button></div>
       <div class="sec" style="grid-column:1/-1"><h2>Warum genau dieser Stop und dieses Ziel?</h2><div class="scroll" id="heatBox"></div></div>
       <div class="sec news"><h2>News</h2><div id="news"></div></div>
     </div>
   </div>
 </section>
+
+<section id="view-market" hidden>
+  <div class="mkt">
+    <div class="sec wide"><h2>Ganzer Markt · trader-scanner</h2>
+      <div class="row"><button class="btn" id="skScanBtn">Alle US-Aktien scannen (≈ 3 Min)</button><span id="skScanState"></span></div>
+      <div class="row" id="skFilter" style="margin-top:10px"></div>
+      <div class="scroll" id="skHits" style="margin-top:8px"></div></div>
+    <div class="sec wide"><h2>Ausbrüche heute · trader-scanner orb</h2>
+      <div class="row"><button class="btn ghost" id="skOrbBtn">Scan-Treffer + Watchlist auf Ausbrüche prüfen</button><span id="skOrbState"></span></div>
+      <div class="scroll" id="skOrb" style="margin-top:8px"></div></div>
+    <div class="sec"><h2>Alarme · trader-alerts</h2>
+      <p class="note" id="skClock" style="margin:0 0 8px"></p>
+      <div class="row"><button class="btn ghost" id="skNotify">Benachrichtigungen erlauben</button><button class="btn ghost" id="skCheckAlerts">Jetzt prüfen</button></div>
+      <div id="skRings" style="margin-top:10px"></div>
+      <p class="note">Läuft die App, prüft sie Alarme jede Minute während der Börsenzeit. Alarme entstehen automatisch, wenn du einen Trade einträgst, oder über „Alarme setzen“ beim Plan.</p></div>
+    <div class="sec"><h2>Kongress-Trades · trader-pelosi</h2>
+      <div class="row"><button class="btn ghost" id="skCongBtn">Meldungen der letzten 30 Tage lesen</button><span id="skCongState"></span></div>
+      <div class="scroll" id="skCong" style="margin-top:8px"></div></div>
+    <div class="sec wide"><h2>Skills</h2><div id="skList"></div>
+      <div class="form" style="margin-top:12px">
+        <label for="skUa">Name und E-Mail für die SEC (für SEC-Meldungen und Quartalszahlen)<input id="skUa" placeholder="Vorname Nachname du@beispiel.de"></label>
+        <label for="skDir">Ordner mit den Skills (leer = automatisch suchen)<input id="skDir" placeholder="~/.claude/skills"></label>
+      </div>
+      <div style="margin-top:10px"><button class="btn" id="skSave">Speichern</button></div>
+      <p class="note">Die SEC verlangt bei jedem Abruf einen Namen mit E-Mail; er geht nur an sec.gov.</p></div>
+  </div>
+</section>
+<div id="toasts" aria-live="polite"></div>
 
 <section id="view-mine" hidden>
   <div class="mine-top">
@@ -496,12 +537,14 @@ function renderAnalysis() {
       <p class="note">Letzte ${ht.length} Trades nach derselben Regel: über der Linie Gewinne, darunter Verluste.</p>` : `<p class="muted">Keine vergleichbaren Ausbrüche.</p>`;
 
   const news = a.news || [];
-  $("news").innerHTML = news.length ? news.map((n) => `<a href="${esc(n.link)}" target="_blank" rel="noopener">${esc(n.title)}<small>${esc(n.publisher || "")} · ${n.time ? new Date(n.time * 1000).toLocaleString("de-DE", { dateStyle: "short", timeStyle: "short" }) : ""}</small></a>`).join("") : `<p class="muted">Keine Schlagzeilen.</p>`;
+  $("news").innerHTML = (news.length ? news.map((n) => `<a href="${esc(n.link)}" target="_blank" rel="noopener">${n.kind === "filing" ? "<b>SEC</b> " : ""}${esc(n.title)}<small>${esc(n.publisher || "")} · ${n.time ? new Date(n.time * 1000).toLocaleString("de-DE", { dateStyle: "short", timeStyle: "short" }) : ""}${(n.tags || []).length ? " · " + n.tags.map(esc).join(", ") : ""}</small></a>`).join("") : `<p class="muted">Keine Schlagzeilen.</p>`)
+    + `<p class="note">Quelle: ${esc(a.news_source || "Yahoo")}${a.news_source === "trader-news" ? " (Yahoo-Schlagzeilen" + "" + " und, mit SEC-Name/E-Mail, 8-K-Meldungen)" : ""}</p>`;
 
   renderContext();
   renderChecks();
   renderOrder();
   renderHeat();
+  renderSkillCheck();
   startLive();
   $("mkt").querySelector(".dot").style.background = a.market_open ? "var(--win)" : "var(--muted)";
   $("mkt").lastElementChild.textContent = a.market_open ? "Markt offen" : "Markt zu · " + a.date;
@@ -538,10 +581,13 @@ function renderOrder() {
     <li>Take-Profit: Limit-Verkauf bei <b class="pos">${f2(o.target)}</b> (+$${a.size.gain_at_target.toFixed(2)}, ${p.target_r}R)
       <small>Kommt in ${Math.round(s.p_target * 100)} % der Simulationen zuerst${s.hist_win != null ? `; ${Math.round(s.hist_win * 100)} % Gewinner bei ${s.n_hist} echten Ausbrüchen` : ""}.</small></li>
     <li>Spätestens <b>${esc(o.flat_by)} ET</b> (${fmtLocal(p.end_t)} deine Zeit) alles verkaufen, egal wie es steht
-      <small>Typischer Ausstieg laut Simulation gegen ${fmtET(s.median_exit_t)} ET. Nichts über Nacht halten.</small></li></ol>`
+      <small>Typischer Ausstieg laut Simulation gegen ${fmtET(s.median_exit_t)} ET. Nichts über Nacht halten.</small></li></ol>
+    ${!DEMO && a.market_open ? `<button class="btn ghost" id="alertBtn" style="margin-top:10px">Alarme setzen: ${a.decision.state === "waiting" ? "Ausbruch, " : ""}Stop, Ziel, Glattstellen</button>` : ""}`
     + ((mine.doc && mine.doc.summary.rules.length) ? `<div class="myrules"><b>Deine Regeln aus deinen Trades:</b><ul style="margin:4px 0 0;padding-left:18px">${mine.doc.summary.rules.map((r) => `<li>${esc(r.text)} <span class="muted">(${esc(r.why)})</span></li>`).join("")}</ul></div>` : "");
 }
+function bindOrderButtons() { if ($("alertBtn")) $("alertBtn").onclick = setAlerts; }
 function renderHeat() {
+  bindOrderButtons();
   const a = analysis, op = a.optimizer, box = $("heatBox");
   if (!op) { box.innerHTML = `<p class="muted">Erst mit einem Plan.</p>`; return; }
   const cell = (st, tr) => op.rows.find((r) => r.stop_kind === st && r.target_r === tr);
@@ -576,7 +622,9 @@ function renderContext() {
       <p class="note">${q.read === "against" ? "Profis halten gegen eine überfüllte Long-Seite." : q.read === "with" ? "Profis sind long, die Masse short." : "Kein klares Gegensignal."}
       Stand ${esc((q.updated_at || "").replace("T", " ").slice(0, 16))} UTC, via Liquid. Fließt als Merkmal ins Journal; zur Regel wird es erst mit Belegen.</p>`;
   } else h += `<p class="note">Keine Liquid-Positionierung für ${esc(a.symbol)} gespeichert.</p>`;
+  h += DEMO ? "" : `<button class="btn ghost" id="anBtn" style="margin-top:10px">Quartalszahlen laden (trader-analyst)</button><div id="anBox"></div>`;
   $("ctxBox").innerHTML = h;
+  if ($("anBtn")) $("anBtn").onclick = loadAnalyst;
 }
 
 /* ------------------------------------------------ live candles (Hyperliquid WebSocket, else /api/live) */
@@ -1604,6 +1652,132 @@ $("chatStop").onclick = () => chat.ctl && chat.ctl.abort();
 $("chatClear").onclick = () => { chat.turns = []; try { localStorage.removeItem("phil.chat"); } catch (e) {} chatRender(); };
 $("chatIn").addEventListener("keydown", (e) => { if (e.key === "Enter" && !e.shiftKey) { e.preventDefault(); chatSend(); } });
 
+/* ------------------------------------------------ the eleven trader-* skills */
+const SETUP_DE = { breakout_20d: "20-Tage-Ausbruch", bull_flag: "Bull Flag", reclaim_ma20: "über 20-Tage-Schnitt zurück",
+  oversold: "überverkauft (RSI < 30)", oversold_bounce: "Erholung nach Überverkauf", orb: "Ausbruch Eröffnungsspanne" };
+const sk = { doc: null, seenRing: 0, filter: "", timer: 0 };
+try { sk.seenRing = +localStorage.getItem("phil.ring") || 0; } catch (e) {}
+
+async function loadSkills() {
+  try { sk.doc = DEMO ? (DEMO.skills || null) : await api("/api/skills"); } catch (e) { sk.doc = null; }
+  renderSkills(); notifyRings();
+}
+function jobLine(j, what) {
+  if (!j || j.state === "idle") return "";
+  if (j.state === "running") return `<span class="chip c-run">läuft ${j.elapsed || 0} s</span>`;
+  if (j.state === "failed") return `<span class="chip c-no">Fehler</span> <span class="note">${esc(j.error || "")}</span>`;
+  return `<span class="note" style="margin:0">${what} · fertig nach ${j.elapsed} s</span>`;
+}
+function renderSkills() {
+  const d = sk.doc, off = !!DEMO;
+  if (!d) { $("skList").innerHTML = `<p class="muted">Skill-Status nicht verfügbar.</p>`; return; }
+  const found = d.skills.filter((s) => s.found).length;
+  $("skList").innerHTML = `<p class="note" style="margin:0 0 8px">${found} von ${d.skills.length} Skills gefunden${off ? " (Stand des Schnappschusses)" : ""}.</p>
+    <ul class="checks">${d.skills.map((s) => `<li><span class="ic ${s.found ? "y" : "n"}">${s.found ? "✓" : "✗"}</span><span><b>${esc(s.label)}</b> <span class="muted">${esc(s.skill)}</span></span><small>${s.found ? "" : "fehlt"}</small></li>`).join("")}</ul>
+    ${found < d.skills.length ? `<p class="note">Fehlende Skills: Ordner mit den trader-*-Skills unten eintragen (z. B. aus Claude Code: ~/.claude/skills) oder PHIL_SKILLS_DIR setzen.</p>` : ""}`;
+  $("skUa").value = d.sec_user_agent || ""; $("skDir").value = d.skills_dir || "";
+  // whole market
+  const js = d.jobs.scan || {}, res = js.result;
+  $("skScanState").innerHTML = jobLine(js, res ? `${res.counts.scanned.toLocaleString("de-DE")} liquide Aktien von ${res.universe.toLocaleString("de-DE")} geprüft, ${res.hits.length} Treffer (Tageskerzen, Stand ${esc(String(res.as_of).replace(" close", " Schlusskurs"))})` : "");
+  if (res) {
+    const setups = [...new Set(res.hits.flatMap((h) => h.setups))];
+    $("skFilter").innerHTML = `<button class="chip-btn" data-f="" aria-pressed="${!sk.filter}">alle ${res.hits.length}</button>` + setups.map((x) => `<button class="chip-btn" data-f="${x}" aria-pressed="${sk.filter === x}">${esc(SETUP_DE[x] || x)} ${res.hits.filter((h) => h.setups.includes(x)).length}</button>`).join("");
+    $("skFilter").querySelectorAll("button").forEach((b) => b.onclick = () => { sk.filter = b.dataset.f; renderSkills(); });
+    const rows = res.hits.filter((h) => !sk.filter || h.setups.includes(sk.filter)).sort((a, b) => (b.volume || 0) - (a.volume || 0)).slice(0, 150);
+    const wl = new Set(d.watchlist);
+    $("skHits").innerHTML = `<table><thead><tr><th>Ticker</th><th>Setup</th><th>Kurs</th><th>RSI</th><th>Volumen</th><th></th></tr></thead><tbody>${rows.map((h) => `<tr>
+      <td><b>${esc(h.symbol)}</b></td><td>${h.setups.map((x) => esc(SETUP_DE[x] || x)).join(", ")}</td><td class="num">${f2(h.price)}</td><td class="num">${h.rsi != null ? h.rsi.toFixed(0) : "–"}</td>
+      <td class="num">${h.volume ? (h.volume / 1e6).toFixed(1) + " Mio." : "–"}</td>
+      <td style="white-space:nowrap"><button class="chip-btn" data-look="${esc(h.symbol)}">Ansehen</button> ${wl.has(h.symbol) ? `<span class="note">in Watchlist</span>` : `<button class="chip-btn" data-add="${esc(h.symbol)}">+ Watchlist</button>`}</td></tr>`).join("")}</tbody></table>
+      <p class="note">${esc(res.note || "")} Sortiert nach Volumen, höchstens 150 angezeigt.</p>`;
+    $("skHits").querySelectorAll("[data-look]").forEach((b) => b.onclick = () => { show("desk"); select(b.dataset.look); });
+    $("skHits").querySelectorAll("[data-add]").forEach((b) => b.onclick = async () => {
+      if (off) return;
+      await api("/api/settings", { watchlist: [b.dataset.add, ...d.watchlist] }); await loadSkills(); loadScan();
+    });
+  } else $("skFilter").innerHTML = $("skHits").innerHTML = js.state === "running" ? "" : `<p class="muted">Noch kein Scan. Läuft die App, scannt sie jeden Börsentag um 9:00 New York (15:00 deutsche Zeit) von selbst.</p>`;
+  // breakouts today
+  const jo = d.jobs.orb || {}, ro = jo.result;
+  $("skOrbState").innerHTML = jobLine(jo, ro ? `${ro.counts.scanned} geprüft, ${ro.hits.length} Ausbrüche` : "");
+  $("skOrb").innerHTML = ro ? (ro.hits.length ? `<table><thead><tr><th>Ticker</th><th>Zeit (ET)</th><th>Kurs</th><th>Spanne</th><th>über Hoch</th><th></th></tr></thead><tbody>${ro.hits.map((h) => `<tr><td><b>${esc(h.symbol)}</b></td><td class="num">${esc(h.at)}</td><td class="num">${f2(h.price)}</td><td class="num">${f2(h.or_low)}–${f2(h.or_high)}</td><td class="num">${sgn(h.pct_over)} %</td><td><button class="chip-btn" data-look="${esc(h.symbol)}">Plan ansehen</button></td></tr>`).join("")}</tbody></table>` : `<p class="muted">Kein Ausbruch bei den geprüften Aktien.</p>`) : "";
+  $("skOrb").querySelectorAll("[data-look]").forEach((b) => b.onclick = () => { show("desk"); select(b.dataset.look); });
+  // alerts
+  const c = d.clock;
+  $("skClock").textContent = c ? `NYSE ${c.open ? "offen" : "geschlossen"} · ${c.reason || ""}${c.early_close ? " · früher Schluss " + c.early_close : ""} · nächste Eröffnung ${c.next_open || "–"}` : "";
+  $("skRings").innerHTML = (d.rings || []).length ? `<ul class="devs">${d.rings.slice().reverse().map((r) => `<li><b>${esc(r.symbol || "")}</b> ${esc(r.message)} <span class="muted">${new Date(r.at * 1000).toLocaleTimeString("de-DE", { hour: "2-digit", minute: "2-digit" })}</span></li>`).join("")}</ul>` : `<p class="muted">Noch kein Alarm ausgelöst.</p>`;
+  // congress
+  const jc = d.jobs.congress || {}, rc = jc.result;
+  $("skCongState").innerHTML = jobLine(jc, rc ? `${rc.filings} Meldungen seit ${esc(rc.since)}, ${rc.read} gelesen` : "");
+  $("skCong").innerHTML = rc ? (rc.rows.filter((r) => r.ticker).length ? `<table><thead><tr><th>Ticker</th><th>Wer</th><th>Art</th><th>Betrag</th><th>Handel</th><th>Gemeldet</th></tr></thead><tbody>${rc.rows.filter((r) => r.ticker).sort((a, b) => (b.watched - a.watched) || (b.date > a.date ? 1 : -1)).slice(0, 80).map((r) => `<tr${r.watched ? ' style="background:var(--wait-soft)"' : ""}><td><b>${esc(r.ticker)}</b>${r.watched ? " ★" : ""}</td><td>${esc(r.member)}${r.owner_name && r.owner_name !== "self" ? ` <span class="muted">(${esc(r.owner_name)})</span>` : ""}</td><td>${r.type === "P" ? '<span class="pos">Kauf</span>' : r.type === "S" ? '<span class="neg">Verkauf</span>' : esc(r.type_name || r.type)}</td><td class="num">${esc(r.amount)}</td><td class="num">${esc(r.date)}</td><td class="num"><a href="${esc(r.url)}" target="_blank" rel="noopener">${esc(r.filed)}</a></td></tr>`).join("")}</tbody></table><p class="note">★ = Aktie in deiner Watchlist. Meldungen kommen Tage bis Wochen nach dem Handel und nennen nur Betragsspannen.</p>` : `<p class="muted">Keine Aktien-Trades mit Ticker gefunden${rc.unread ? ` (${rc.unread} Meldungen nicht lesbar, dafür braucht der Skill das Programm pdftotext)` : ""}.</p>`) : "";
+  // buttons
+  ["skScanBtn", "skOrbBtn", "skCongBtn", "skSave", "skCheckAlerts"].forEach((id) => { $(id).disabled = off; if (off) $(id).title = "Nur in der lokal gestarteten App"; });
+  const running = ["scan", "orb", "congress"].some((k) => (d.jobs[k] || {}).state === "running");
+  clearTimeout(sk.timer); if (running && !off) sk.timer = setTimeout(loadSkills, 4000);
+}
+$("skScanBtn").onclick = async () => { await api("/api/skills/scan", {}); loadSkills(); };
+$("skOrbBtn").onclick = async () => {
+  const hits = ((sk.doc && sk.doc.jobs.scan && sk.doc.jobs.scan.result) || { hits: [] }).hits.sort((a, b) => (b.volume || 0) - (a.volume || 0)).slice(0, 150).map((h) => h.symbol);
+  await api("/api/skills/orb", { symbols: [...new Set([...(sk.doc ? sk.doc.watchlist : []), ...hits])] }); loadSkills();
+};
+$("skCongBtn").onclick = async () => { await api("/api/skills/congress", { days: 30 }); loadSkills(); };
+$("skCheckAlerts").onclick = async () => { await api("/api/skills/check-alerts", {}); loadSkills(); };
+$("skSave").onclick = async () => {
+  try { await api("/api/settings", { sec_user_agent: $("skUa").value, skills_dir: $("skDir").value }); $("skSave").textContent = "Gespeichert"; setTimeout(() => $("skSave").textContent = "Speichern", 1500); loadSkills(); }
+  catch (e) { $("skSave").textContent = e.message; }
+};
+$("skNotify").onclick = async () => {
+  try { const r = await Notification.requestPermission(); $("skNotify").textContent = r === "granted" ? "Benachrichtigungen an" : "Nicht erlaubt"; } catch (e) { $("skNotify").textContent = "Dieser Browser kann das nicht"; }
+};
+function notifyRings() {
+  const rings = (sk.doc && sk.doc.rings) || [];
+  const fresh = rings.filter((r) => r.at > sk.seenRing);
+  if (!fresh.length) return;
+  sk.seenRing = Math.max(...fresh.map((r) => r.at)); try { localStorage.setItem("phil.ring", String(sk.seenRing)); } catch (e) {}
+  for (const r of fresh) {
+    toast("⏰ " + r.message);
+    try { if (window.Notification && Notification.permission === "granted") new Notification("Phil: " + (r.symbol || "Alarm"), { body: r.message }); } catch (e) {}
+  }
+}
+function toast(msg) {
+  const t = document.createElement("div"); t.className = "toast"; t.textContent = msg; $("toasts").append(t);
+  setTimeout(() => t.remove(), 12000);
+}
+if (!DEMO) setInterval(() => { if (!document.hidden) loadSkills(); }, 30000);
+
+// the skills' verdict on the ticker on screen
+function renderSkillCheck() {
+  const a = analysis, box = $("skillBox"), r = a && a.skills;
+  if (!a || !a.plan) { box.innerHTML = `<p class="muted">Erst wenn es einen Plan gibt.</p>`; $("skCheckBtn").hidden = true; return; }
+  $("skCheckBtn").hidden = !!DEMO;
+  if (!r) { box.innerHTML = `<p class="muted">Bei einem frischen KAUFEN-Signal prüfen die Skills automatisch. Sonst auf „Mit allen Skills prüfen“ tippen.</p>`; return; }
+  const ok = (v) => v === true ? "y" : v === false ? "n" : "u", sym = (v) => v === true ? "✓" : v === false ? "✗" : "•";
+  box.innerHTML = `<p class="note" style="margin:0 0 8px">Geprüft um ${esc(r.at)} ET mit den Skills trader-entry → exit → timemachine → budget → risk → broker.</p>
+    <ul class="checks">${r.steps.map((s) => `<li><span class="ic ${ok(s.ok)}">${sym(s.ok)}</span><span><b>${esc(s.label)}:</b> ${esc(s.line || s.error || "")}${s.detail ? `<br><span class="muted" style="font-size:12px">${esc(s.detail)}</span>` : ""}</span><small></small></li>`).join("")}</ul>
+    ${r.ticket ? `<details style="margin-top:8px"><summary class="note" style="cursor:pointer">Order-Ticket für Alpaca (${r.ticket.paper ? "Paper" : "echt"}, ${r.ticket.ready ? "bereit" : "nicht freigegeben"})</summary>
+      <pre class="pre" id="tkJson">${esc(JSON.stringify(r.ticket.tool_input, null, 2))}</pre><button class="chip-btn" id="tkCopy">Kopieren</button></details>` : ""}`;
+  if ($("tkCopy")) $("tkCopy").onclick = async () => { try { await navigator.clipboard.writeText($("tkJson").textContent); $("tkCopy").textContent = "Kopiert"; } catch (e) { const s = getSelection(), rg = document.createRange(); rg.selectNodeContents($("tkJson")); s.removeAllRanges(); s.addRange(rg); } };
+}
+$("skCheckBtn").onclick = async () => {
+  const b = $("skCheckBtn"); b.disabled = true; b.textContent = "Skills prüfen…";
+  try { analysis.skills = await api("/api/skills/check", { symbol: analysis.symbol }); renderSkillCheck(); }
+  catch (e) { $("skillBox").innerHTML = `<p class="err">${esc(e.message)}</p>`; }
+  b.disabled = false; b.textContent = "Mit allen Skills prüfen";
+};
+async function setAlerts() {
+  const a = analysis, p = a.plan, b = $("alertBtn");
+  b.disabled = true;
+  try {
+    await api("/api/skills/alerts", { symbol: a.symbol, entry: a.decision.state === "waiting" ? p.entry : null, stop: p.stop, target: p.target });
+    b.textContent = "Alarme gesetzt (trader-alerts)";
+  } catch (e) { b.textContent = e.message; }
+}
+async function loadAnalyst() {
+  const b = $("anBtn"); b.disabled = true; b.textContent = "Liest SEC-Daten…";
+  try { const r = await api("/api/skills/analyst", { symbol: analysis.symbol }); $("anBox").innerHTML = `<pre class="pre">${esc(r.text)}</pre>`; }
+  catch (e) { $("anBox").innerHTML = `<p class="err">${esc(e.message)}</p>`; }
+  b.disabled = false; b.textContent = "Quartalszahlen laden (trader-analyst)";
+}
+
 /* ------------------------------------------------ bar length */
 function markTF(m) { $("tf").querySelectorAll("button").forEach((b) => b.setAttribute("aria-pressed", String(+b.dataset.m === +m))); }
 $("tf").querySelectorAll("button").forEach((b) => b.onclick = async () => {
@@ -1619,12 +1793,13 @@ $("tf").querySelectorAll("button").forEach((b) => b.onclick = async () => {
 
 /* ------------------------------------------------ tabs, clock, refresh */
 function show(which) {
-  for (const v of ["desk", "mine", "learn"]) { $("view-" + v).hidden = which !== v; $("tab-" + v).setAttribute("aria-selected", which === v); }
+  for (const v of ["desk", "market", "mine", "learn"]) { $("view-" + v).hidden = which !== v; $("tab-" + v).setAttribute("aria-selected", which === v); }
   if (which === "desk") drawChart();
 }
 $("tab-desk").onclick = () => show("desk");
 $("tab-learn").onclick = () => { show("learn"); loadState(); };
 $("tab-mine").onclick = () => { show("mine"); loadMine(); };
+$("tab-market").onclick = () => { show("market"); loadSkills(); };
 function tick() {
   const now = Date.now() / 1000;
   $("clock").textContent = "New York " + fmtET(now) + " · " + LOCAL_TZ.split("/").pop().replace("_", " ") + " " + fmtLocal(now);
@@ -1639,6 +1814,7 @@ if (DEMO) {
 }
 loadState().catch(() => {});
 loadMine();
+loadSkills();
 loadScan();
 })();
 </script>

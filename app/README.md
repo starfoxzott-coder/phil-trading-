@@ -25,6 +25,27 @@ Nur Python 3.9+ und die Standardbibliothek, keine Installation. Kursdaten: Yahoo
 - **Zeitleiste unten**: oben New-York-Zeit, darunter deine Zeit; der farbige Balken ist die
   Positionsdauer.
 
+## Die elf trader-Skills
+
+Die App ruft die Skills selbst auf (als eigene Programme, mit ihren eigenen Befehlen) und zeigt ihre
+Ergebnisse an. Sie sucht sie in `PHIL_SKILLS_DIR`, im Ordner aus den Einstellungen (Tab „Markt“),
+in `~/.claude/skills` (dort legt Claude Code synchronisierte Skills ab) und in `app/skills`. Der
+Tab „Markt“ zeigt, welche gefunden wurden. Die Skills arbeiten in `app/data/skillwork/`; ihre
+Grenzen (Konto, max. Verlust, Tageslimit, Einstiegsfenster …) übernimmt die App aus deinen
+Einstellungen.
+
+| Skill | Wo in der App |
+|---|---|
+| trader-scanner | Tab „Markt“: alle ~6.000 US-Aktien auf Tages-Setups (20-Tage-Ausbruch, Bull Flag, über 20-Tage-Schnitt zurück, überverkauft, Erholung), etwa 3 Minuten; läuft jeden Börsentag um 9:00 New York von selbst. Dazu „Ausbrüche heute“ über die Treffer und die Watchlist. |
+| trader-entry, -exit, -timemachine, -budget, -risk, -broker | „Was die Skills zu diesem Signal sagen“: die ganze Kette auf den Plan der App, mit dem Order-Ticket für Alpaca zum Kopieren. Läuft automatisch bei jedem frischen KAUFEN; **blockiert trader-risk, wird aus KAUFEN ein KEIN TRADE**. Sonst per Knopf. |
+| trader-alerts | Alarme für Ausbruch, Stop, Ziel und Glattstellen (Knopf beim Plan, automatisch für eingetragene Trades), jede Minute geprüft, als Hinweis in der App und als Browser-Benachrichtigung. Dazu die NYSE-Uhr mit Feiertagen. |
+| trader-news | Die News im Trading-Tab: Yahoo-Schlagzeilen mit Themen und, mit Name und E-Mail für die SEC, 8-K-Meldungen. |
+| trader-analyst | „Quartalszahlen laden“ im Markt-Kontext (braucht Name und E-Mail für die SEC). |
+| trader-pelosi | Tab „Markt“: Kongress-Trades der letzten 30 Tage, Aktien der Watchlist markiert (zum Lesen der PDFs braucht der Skill `pdftotext`). |
+
+Fehlt ein Skill, läuft die App wie vorher mit ihren eigenen Berechnungen weiter. Kein Skill und
+keine App-Funktion platziert eine Order.
+
 ## Kerzenlänge: 1, 2, 5, 15 oder 30 Minuten
 
 Oben in der Kopfzeile stellst du unter „Kerzen“ ein, in welchem Zeitrahmen die App rechnet. Alles
@@ -226,6 +247,7 @@ Erst handeln, wenn das Journal über Wochen positiv ist, und dann klein.
 - `trades.py`: deine eigenen Trades, Bilder, erkannte Fehler, persönliche Regeln
 - `claude_review.py`: optionale Bildauswertung und Trade-Bewertung durch Claude
 - `chartdata.py`: Daten für das Chart-Fenster (lange Historie, vergangene Signale)
+- `skills.py`: findet und startet die trader-Skills, liest ihre Ergebnisse
 - `server.py`: Web-Server und Kommandozeile
 - `web/index.html`: Oberfläche mit Chart
 - `data/intel.json`: Liquid-Positionierung, von Claude geschrieben

@@ -29,6 +29,7 @@ import learn  # noqa: E402
 import liquid  # noqa: E402
 import trades  # noqa: E402
 import chartdata  # noqa: E402
+import skills  # noqa: E402
 
 WEB = os.path.join(os.path.dirname(os.path.abspath(__file__)), "web")
 ORDER = {"KAUFEN": 0, "LÄUFT": 1, "WARTEN": 1, "BEOBACHTEN": 2, "VORBEI": 3, "KEIN TRADE": 4}
@@ -55,9 +56,66 @@ def analyze(symbol, replays=2000, news=True, now_ts=None):
     a["signal"] = sig
     a["generation"] = strategy.get("generation", 0)
     a["min_ev_r"] = strategy.get("min_ev_r", 0.10)
+    if now_ts is None:
+        apply_skill_check(a, strategy, run_now=a["decision"]["action"] == "KAUFEN")
     if news:
-        a["news"] = engine.fetch_news(symbol)
+        a["news"], a["news_source"] = skill_news(strategy, symbol)
     return a
+
+
+_skill_cache = {}
+
+
+def _skill_key(a):
+    p = a.get("plan") or {}
+    return (a["symbol"], a["date"], p.get("entry_t"), p.get("stop"), p.get("target"), a.get("bar_minutes"))
+
+
+def apply_skill_check(a, strategy, run_now=False):
+    """The skills' own verdict on this plan: run it for a fresh buy (or on request), reuse it for 15 minutes.
+
+    trader-risk is the gate: a BLOCK from the skill turns a KAUFEN into KEIN TRADE.
+    """
+    if not a.get("plan"):
+        return None
+    key = _skill_key(a)
+    hit = _skill_cache.get(key)
+    if hit and time.time() - hit[0] < 900:
+        res = hit[1]
+    elif run_now:
+        res = skills.signal_check(a, strategy)
+        _skill_cache[key] = (time.time(), res)
+    else:
+        return None
+    res = {k: v for k, v in (res or {}).items() if k != "raw"} or None  # the page needs the summary, not every band
+    a["skills"] = res
+    if res and res.get("risk_verdict"):
+        ok = res["risk_verdict"] == "PASS"
+        a.setdefault("checks", []).insert(3, {"key": "skill_risk", "hard": True, "ok": ok,
+                                              "label": "trader-risk (Skill) gibt die Order frei",
+                                              "detail": "PASS" if ok else "; ".join(res.get("risk_reasons") or [])[:160]})
+        if not ok and a["decision"]["action"] == "KAUFEN":
+            a["decision"]["action"] = "KEIN TRADE"
+            a["decision"]["reasons"].insert(0, "trader-risk (Skill) blockiert: " + "; ".join(res.get("risk_reasons") or ["ohne Grund"]))
+    return res
+
+
+_news_cache = {}
+
+
+def skill_news(strategy, symbol):
+    """Headlines and SEC filings from trader-news; Yahoo search as the fallback."""
+    hit = _news_cache.get(symbol)
+    if hit and time.time() - hit[0] < 600:
+        return hit[1], hit[2]
+    r = skills.news(strategy, symbol)
+    if r.get("ok") and r.get("data"):
+        items = [{"title": it.get("title"), "publisher": it.get("source"), "link": it.get("link"), "kind": it.get("kind"),
+                  "tags": it.get("tags") or [], "new": it.get("new"),
+                  "time": engine.parse_iso_ts(it.get("time"))} for it in (r["data"].get("items") or [])[:12]]
+        _news_cache[symbol] = (time.time(), items, "trader-news")
+        return items, "trader-news"
+    return engine.fetch_news(symbol), "Yahoo"
 
 
 def scan(replays=600):
@@ -118,6 +176,10 @@ def open_trade(body):
     t = trades.open_trade(body, analysis)
     if t.get("signal_id"):
         learn.mark_taken(t["signal_id"], True)
+    try:  # trader-alerts watches your own stop and target from now on
+        skills.alerts_for_plan(learn.load_strategy(), t["symbol"], t["date"], stop=t.get("stop"), target=t.get("target"), tag="trade")
+    except skills.SkillError:
+        pass
     return t
 
 
@@ -182,6 +244,12 @@ def save_settings(body):
             else:
                 engine.hhmm_to_min(str(v))  # validates HH:MM
                 s["rules"][k] = str(v)
+    for k in ("sec_user_agent", "skills_dir"):
+        if k in body:
+            v = str(body[k] or "").strip()
+            if len(v) > 300 or any(c in v for c in "\r\n"):
+                raise ValueError("%s: höchstens eine Zeile" % k)
+            s[k] = v
     if "watchlist" in body:
         wl = [str(x).strip().upper() for x in body["watchlist"] if str(x).strip()]
         if not wl or any(not x.replace("-", "").replace(".", "").isalnum() or len(x) > 10 for x in wl):
@@ -189,6 +257,61 @@ def save_settings(body):
         s["watchlist"] = wl[:40]
     learn.save_strategy(s)
     return s
+
+
+def skill_daemon():
+    """trader-alerts every minute in market hours; the whole-market scan once before the open."""
+    last_scan = None
+    while True:
+        try:
+            now = engine.et_now()
+            m = engine.minute_of_day(now)
+            s = learn.load_strategy()
+            if now.weekday() < 5 and skills.discover(s.get("skills_dir")):
+                if 9 * 60 <= m < 9 * 60 + 25 and last_scan != now.date():
+                    last_scan = now.date()
+                    skills.start_job("scan", lambda: skills.market_scan(s))
+                if engine.OPEN_MIN <= m <= engine.CLOSE_MIN + 5:
+                    skills.check_alerts(s)
+        except Exception:
+            traceback.print_exc()
+        time.sleep(60)
+
+
+def skills_state():
+    s = learn.load_strategy()
+    return {"skills": skills.status(s), "sec_user_agent": s.get("sec_user_agent") or "", "skills_dir": s.get("skills_dir") or "",
+            "jobs": {k: skills.job(k) for k in ("scan", "orb", "congress")}, "watchlist": s["watchlist"],
+            "rings": skills.RINGS[-30:], "clock": skills.clock(s) if skills.discover(s.get("skills_dir")).get("alerts") else None}
+
+
+def skill_post(op, body):
+    s = learn.load_strategy()
+    if op == "check":
+        a = analyze(body.get("symbol", "SPY"), news=False)
+        res = apply_skill_check(a, s, run_now=True)
+        if res is None:
+            raise ValueError("Für diesen Ticker gibt es heute keinen Plan, den die Skills prüfen könnten")
+        return res
+    if op == "scan":
+        return skills.start_job("scan", lambda: skills.market_scan(s))
+    if op == "orb":
+        syms = [x for x in (body.get("symbols") or []) if x] or s["watchlist"]
+        return skills.start_job("orb", lambda: skills.orb_scan(s, syms))
+    if op == "congress":
+        import datetime
+        since = (engine.et_now().date() - datetime.timedelta(days=int(body.get("days") or 45))).isoformat()
+        return skills.start_job("congress", lambda: skills.congress(s, since, set(s["watchlist"])))
+    if op == "analyst":
+        return skills.analyst(s, body.get("symbol", ""))
+    if op == "alerts":
+        return {"log": skills.alerts_for_plan(s, body["symbol"], engine.et_now().date().isoformat(),
+                                              entry=body.get("entry"), stop=body.get("stop"), target=body.get("target"))}
+    if op == "alert-list":
+        return {"text": skills.alert_rules(s)}
+    if op == "check-alerts":
+        return skills.check_alerts(s)
+    raise ValueError("unbekannte Skill-Aktion")
 
 
 def auto_learner():
@@ -247,6 +370,10 @@ class Handler(BaseHTTPRequestHandler):
             return self._guard(state)
         if u.path == "/api/trades":
             return self._guard(trades_state)
+        if u.path == "/api/skills":
+            return self._guard(skills_state)
+        if u.path == "/api/skills/job":
+            return self._guard(lambda: skills.job(q.get("name", "")))
         if u.path == "/api/chart":
             return self._guard(lambda: chartdata.chart(q.get("symbol", "SPY"), q.get("iv", "5")))
         if u.path == "/api/past-signals":
@@ -277,6 +404,8 @@ class Handler(BaseHTTPRequestHandler):
             return self._guard(lambda: open_trade(body))
         if p == "/api/read-shot":
             return self._guard(lambda: read_shot(body))
+        if p.startswith("/api/skills/"):
+            return self._guard(lambda: skill_post(p[len("/api/skills/"):], body))
         if p == "/api/ask":
             return self._guard(lambda: ask(body))
         m = re.match(r"^/api/trades/([A-Za-z0-9_.-]+)/(close|image|rate|review|delete)$", p)
@@ -310,6 +439,7 @@ def main():
             print("%-6s %-11s %s" % (r["symbol"], r["action"], r.get("reason", "")))
         return
     threading.Thread(target=auto_learner, daemon=True).start()
+    threading.Thread(target=skill_daemon, daemon=True).start()
     srv = ThreadingHTTPServer((a.host, a.port), Handler)
     url = "http://%s:%d" % ("localhost" if a.host in ("127.0.0.1", "0.0.0.0") else a.host, a.port)
     print("Phil Day-Trade läuft auf", url, "(Strg+C beendet)", flush=True)

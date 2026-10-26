@@ -3,3 +3,4 @@ data/*.tmp
 __pycache__/
 data/my-trades.jsonl
 data/shots/
+data/skillwork/
