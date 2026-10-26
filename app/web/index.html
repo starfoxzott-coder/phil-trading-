@@ -103,6 +103,13 @@ input { font: inherit; padding: 6px 9px; border: 1px solid var(--line); border-r
 .rbars::after { content: ""; position: absolute; left: 0; right: 0; top: 50%; border-top: 1px solid var(--line) }
 .rbars div { flex: 1; min-width: 4px; position: relative }
 .rbars i { position: absolute; left: 0; right: 0; border-radius: 2px }
+.news { grid-column: 1 / -1 }
+.smbar { display: flex; height: 10px; border-radius: 3px; overflow: hidden; background: var(--loss-soft); margin: 4px 0 2px }
+.smbar div { background: var(--win) }
+.live { display: inline-flex; align-items: center; gap: 5px; font-size: 11px; font-weight: 700; color: var(--accent); letter-spacing: .05em }
+.live::before { content: ""; width: 7px; height: 7px; border-radius: 50%; background: currentColor }
+@media (prefers-reduced-motion: no-preference) { .live.on::before { animation: blink 1.2s infinite } }
+@keyframes blink { 50% { opacity: .25 } }
 .news a { color: var(--fg); text-decoration: none; display: block; padding: 6px 0; border-top: 1px solid var(--line) }
 .news a:hover { color: var(--accent) }
 .news small { color: var(--muted); display: block; font-size: 11.5px }
@@ -157,6 +164,9 @@ td { padding: 6px 8px; border-bottom: 1px solid var(--line); vertical-align: top
         <span><i style="background:var(--range)"></i>Eröffnungsspanne</span>
         <span><i style="background:var(--fan)"></i>Time Machine 5–95 %</span>
         <span>Boxlänge = Haltedauer bis „flat by“</span>
+        <span><i style="background:var(--wait);height:2px;vertical-align:3px"></i>VWAP</span>
+        <span><i style="background:var(--muted);height:2px;vertical-align:3px"></i>EMA 20</span>
+        <span id="liveTag" class="live">offline</span>
         <span id="tzNote"></span>
       </div>
     </div>
@@ -164,6 +174,7 @@ td { padding: 6px 8px; border-bottom: 1px solid var(--line); vertical-align: top
       <div class="sec" id="tmSec"><h2>Time Machine</h2><div id="tm"></div></div>
       <div class="sec"><h2>Größe &amp; Risiko-Check</h2><div id="sizeBox"></div></div>
       <div class="sec"><h2>Diese Regel auf diesem Ticker, letzte 60 Tage</h2><div id="hist"></div></div>
+      <div class="sec"><h2>Markt-Kontext · Liquid &amp; Indikatoren</h2><div id="ctxBox"></div></div>
       <div class="sec news"><h2>News</h2><div id="news"></div></div>
     </div>
   </div>
@@ -233,6 +244,10 @@ async function loadScan() {
 }
 
 /* ------------------------------------------------ one ticker */
+async function refresh() {
+  if (!current) return;
+  try { analysis = await api("/api/analyze?symbol=" + encodeURIComponent(current)); renderAnalysis(); loadScan(); } catch (e) {}
+}
 async function select(sym) {
   current = sym; renderTicks();
   try {
@@ -303,12 +318,100 @@ function renderAnalysis() {
   const news = a.news || [];
   $("news").innerHTML = news.length ? news.map((n) => `<a href="${esc(n.link)}" target="_blank" rel="noopener">${esc(n.title)}<small>${esc(n.publisher || "")} · ${n.time ? new Date(n.time * 1000).toLocaleString("de-DE", { dateStyle: "short", timeStyle: "short" }) : ""}</small></a>`).join("") : `<p class="muted">Keine Schlagzeilen.</p>`;
 
+  renderContext();
+  startLive();
   $("mkt").querySelector(".dot").style.background = a.market_open ? "var(--win)" : "var(--muted)";
   $("mkt").lastElementChild.textContent = a.market_open ? "Markt offen" : "Markt zu · " + a.date;
   $("gen").textContent = "· Regel Gen. " + (a.generation || 0);
   $("tzNote").textContent = "Zeitleiste: oben New York, unten deine Zeit (" + LOCAL_TZ + ")";
   drawChart();
 }
+
+function renderContext() {
+  const a = analysis, i = a.indicators || {}, pp = a.perp, q = a.intel;
+  const pct = (x) => (x * 100).toFixed(0) + " %";
+  let h = `<dl class="kv"><dt>VWAP heute</dt><dd class="${i.above_vwap ? "pos" : "neg"}">${f2(i.vwap)} ${i.above_vwap ? "Kurs drüber" : "Kurs drunter"}</dd>
+    <dt>EMA 20 (5 Min)</dt><dd class="${i.above_ema ? "pos" : "neg"}">${f2(i.ema20)}</dd>
+    <dt>RSI 14</dt><dd>${i.rsi14 ?? "–"}${i.rsi14 >= 70 ? " überkauft" : i.rsi14 <= 30 ? " überverkauft" : ""}</dd>
+    <dt>ATR 14 (Schwankung je Kerze)</dt><dd>${i.atr14 ?? "–"}</dd>`;
+  if (pp) h += `<dt>Perp ${esc(pp.coin)}${pp.same_instrument ? "" : " (Index)"}</dt><dd>${pp.same_instrument ? f2(pp.mark) : pp.mark.toFixed(1)}</dd>
+    <dt>Funding pro Stunde</dt><dd class="${pp.funding_pct_hr > 0 ? "neg" : "pos"}">${sgn(pp.funding_pct_hr, 4)} %</dd>
+    <dt>Open Interest</dt><dd>$${(pp.open_interest_usd / 1e6).toFixed(1)} Mio.</dd>
+    <dt>Prämie Perp vs. Oracle</dt><dd>${sgn(pp.premium_pct, 3)} %</dd>`;
+  h += `</dl>`;
+  if (q) {
+    h += `<p class="note" style="margin-top:12px">Smart Money (profitable Trader) <b>${pct(q.smart_long)} long</b></p><div class="smbar"><div style="width:${q.smart_long * 100}%"></div></div>
+      <p class="note" style="margin:6px 0 0">Verlierende Masse <b>${pct(q.crowd_long)} long</b></p><div class="smbar"><div style="width:${q.crowd_long * 100}%"></div></div>
+      <p class="note">${q.read === "against" ? "Profis halten gegen eine überfüllte Long-Seite." : q.read === "with" ? "Profis sind long, die Masse short." : "Kein klares Gegensignal."}
+      Stand ${esc((q.updated_at || "").replace("T", " ").slice(0, 16))} UTC, via Liquid. Fließt als Merkmal ins Journal; zur Regel wird es erst mit Belegen.</p>`;
+  } else h += `<p class="note">Keine Liquid-Positionierung für ${esc(a.symbol)} gespeichert.</p>`;
+  $("ctxBox").innerHTML = h;
+}
+
+/* ------------------------------------------------ live candles (Hyperliquid WebSocket, else /api/live) */
+const live = { sym: null, m1: new Map(), ws: null, poll: null, src: "", slot: 0, raf: 0 };
+function stopLive() {
+  if (live.ws) { live.ws.onclose = null; live.ws.close(); live.ws = null; }
+  clearInterval(live.poll); live.poll = null; live.m1.clear(); live.src = "";
+  setLiveTag(false, DEMO ? "Schnappschuss" : "offline");
+}
+function setLiveTag(on, text) { const t = $("liveTag"); t.className = "live" + (on ? " on" : ""); t.textContent = text; }
+function putM1(c) { live.m1.set(c[0], c); if (live.m1.size > 90) live.m1.delete(live.m1.keys().next().value); }
+function liveTick() {
+  if (live.raf) return;
+  live.raf = requestAnimationFrame(() => {
+    live.raf = 0; drawChart();
+    const slot = Math.floor(Date.now() / 300000) * 300;
+    if (live.slot && slot !== live.slot) { // a 5-minute candle just closed: re-run the call once Yahoo has it
+      const sym = current; setTimeout(() => sym === current && refresh(), 20000); setTimeout(() => sym === current && refresh(), 75000);
+    }
+    live.slot = slot;
+  });
+}
+async function pollLive() {
+  try {
+    const r = await api("/api/live?symbol=" + encodeURIComponent(live.sym));
+    (r.candles || []).forEach(putM1);
+    if (!live.ws) live.src = r.source || ("Hyperliquid " + (r.coin || ""));
+    setLiveTag(true, "LIVE · " + live.src); liveTick();
+  } catch (e) { setLiveTag(false, "live gestört"); }
+}
+function startLive() {
+  const a = analysis;
+  if (DEMO || !a.market_open) { if (live.sym !== a.symbol) stopLive(); live.sym = a.symbol; setLiveTag(false, DEMO ? "Schnappschuss" : "Markt zu"); return; }
+  if (live.sym === a.symbol && (live.ws || live.poll)) return;
+  stopLive(); live.sym = a.symbol;
+  pollLive();
+  if (a.live_coin && "WebSocket" in window) {
+    try {
+      const ws = new WebSocket("wss://api.hyperliquid.xyz/ws"); live.ws = ws;
+      ws.onopen = () => ws.send(JSON.stringify({ method: "subscribe", subscription: { type: "candle", coin: a.live_coin, interval: "1m" } }));
+      ws.onmessage = (ev) => {
+        const m = JSON.parse(ev.data);
+        if (m.channel !== "candle" || !m.data) return;
+        const d = m.data; putM1([Math.floor(d.t / 1000), +d.o, +d.h, +d.l, +d.c, +d.v]);
+        live.src = "Hyperliquid " + a.live_coin; setLiveTag(true, "LIVE · " + live.src); liveTick();
+      };
+      ws.onclose = ws.onerror = () => { if (live.ws === ws) { live.ws = null; if (!live.poll) live.poll = setInterval(pollLive, 5000); } };
+    } catch (e) { live.ws = null; }
+  }
+  if (!live.ws) live.poll = setInterval(pollLive, 5000);
+}
+// 5-minute candles built from the live 1-minute ones, for slots Yahoo has not closed yet
+function liveBars() {
+  const a = analysis; if (!a || !live.m1.size || live.sym !== a.symbol || !a.market_open) return [];
+  const lastT = a.bars.length ? a.bars[a.bars.length - 1][0] : a.session_open - 300;
+  const slots = new Map();
+  [...live.m1.values()].sort((x, y) => x[0] - y[0]).forEach((c) => {
+    const st = Math.floor(c[0] / 300) * 300;
+    if (st <= lastT || st < a.session_open || st >= a.session_end) return;
+    const b = slots.get(st);
+    if (!b) slots.set(st, [st, c[1], c[2], c[3], c[4], c[5]]);
+    else { b[2] = Math.max(b[2], c[2]); b[3] = Math.min(b[3], c[3]); b[4] = c[4]; b[5] += c[5]; }
+  });
+  return [...slots.values()];
+}
+function livePrice() { const lb = liveBars(); return lb.length ? lb[lb.length - 1][4] : null; }
 
 /* ------------------------------------------------ the chart */
 const cv = $("chart"), ctx = cv.getContext("2d");
@@ -325,14 +428,17 @@ function drawChart() {
   const padL = 8, padR = narrow ? 58 : 74, padT = 22, tlH = 64, padB = tlH + 8;
   const t0 = a.session_open, t1 = a.session_end;
   const X = (t) => padL + (t - t0) / (t1 - t0) * (W - padL - padR);
-  const bars = a.bars, p = a.plan, s = a.sim;
-  let lo = Math.min(...bars.map((b) => b[3])), hi = Math.max(...bars.map((b) => b[2]));
+  const bars = a.bars, p = a.plan, s = a.sim, lbars = liveBars();
+  const all = bars.concat(lbars);
+  let lo = Math.min(...all.map((b) => b[3])), hi = Math.max(...all.map((b) => b[2]));
   if (p) { lo = Math.min(lo, p.stop); hi = Math.max(hi, p.target); }
   if (s) for (const f of s.fan) { lo = Math.min(lo, f.p25); hi = Math.max(hi, f.p75); }
   const pad = (hi - lo) * 0.06; lo -= pad; hi += pad;
   const Y = (v) => padT + (hi - v) / (hi - lo) * (H - padT - padB);
   geo = { X, Y, padL, padR, padT, padB, W, H, t0, t1, lo, hi };
 
+  // everything priced stays inside the chart area
+  ctx.save(); ctx.beginPath(); ctx.rect(0, padT - 18, W, H - padB - padT + 18); ctx.clip();
   // price grid
   ctx.font = `11px ${css("--f-num")}`; ctx.textBaseline = "middle";
   const step = niceStep((hi - lo) / 6);
@@ -401,6 +507,25 @@ function drawChart() {
     pts.forEach(([x, f], i) => (i ? ctx.lineTo(x, Y(f.p50)) : ctx.moveTo(x, Y(f.p50)))); ctx.stroke(); ctx.setLineDash([]); ctx.globalAlpha = 1;
   }
 
+  // VWAP and EMA 20
+  const path = (k, color, dash) => {
+    ctx.strokeStyle = color; ctx.lineWidth = 1.4; ctx.setLineDash(dash); ctx.beginPath();
+    bars.forEach((b, i) => { if (b[k] == null) return; const x = X(b[0]) + bw / 2, y = Y(b[k]); i ? ctx.lineTo(x, y) : ctx.moveTo(x, y); });
+    ctx.stroke(); ctx.setLineDash([]); ctx.lineWidth = 1;
+  };
+  path(6, C.wait, []); path(7, C.muted, [3, 3]);
+
+  // live candles (not closed yet at Yahoo): hollow, so they read as provisional
+  for (const b of lbars) {
+    const [t, o, h, l, c] = b, x = X(t) + bw / 2, up = c >= o;
+    ctx.strokeStyle = up ? C.up : C.dn; ctx.lineWidth = 1.2;
+    line(x, Y(h), x, Y(l));
+    const w = Math.max(2, bw * 0.66), y1 = Y(Math.max(o, c)), y2 = Y(Math.min(o, c));
+    ctx.fillStyle = C.panel; ctx.fillRect(x - w / 2, y1, w, Math.max(1, y2 - y1)); ctx.strokeRect(x - w / 2, y1, w, Math.max(1, y2 - y1));
+  }
+  const lp = livePrice();
+  if (lp != null) { ctx.setLineDash([2, 2]); ctx.strokeStyle = C.accent; line(padL, Y(lp), W - padR, Y(lp)); ctx.setLineDash([]); tag(W - padR, Y(lp), "Live " + f2(lp), C.accent); }
+
   // candles
   for (const b of bars) {
     const [t, o, h, l, c] = b, x = X(t) + bw / 2, up = c >= o;
@@ -411,8 +536,15 @@ function drawChart() {
   }
   // last price
   const last = bars[bars.length - 1];
-  if (a.live) { ctx.setLineDash([2, 2]); ctx.strokeStyle = C.muted; line(padL, Y(last[4]), W - padR, Y(last[4])); ctx.setLineDash([]); }
+  if (a.live && lp == null) { ctx.setLineDash([2, 2]); ctx.strokeStyle = C.muted; line(padL, Y(last[4]), W - padR, Y(last[4])); ctx.setLineDash([]); }
+  // live breakout watch: price above the range high, confirmation only at the candle close
+  if (a.decision.state === "waiting" && lp != null && a.opening_range && lp > a.opening_range.high) {
+    const slotEnd = Math.floor(Date.now() / 300000) * 300 + 300;
+    ctx.fillStyle = C.wait; ctx.font = `700 12px ${css("--f-ui")}`; ctx.textBaseline = "top";
+    ctx.fillText("Kurs über Spannenhoch: Bestätigung erst beim Kerzenschluss " + fmtET(slotEnd) + " ET", padL + 6, padT - 16);
+  }
 
+  ctx.restore();
   drawTimeline(C, X, H - tlH, tlH);
 }
 
@@ -456,11 +588,11 @@ cv.addEventListener("mousemove", (e) => {
   if (!geo || !analysis) return;
   const r = cv.getBoundingClientRect(), x = e.clientX - r.left;
   const t = geo.t0 + (x - geo.padL) / (geo.W - geo.padL - geo.padR) * (geo.t1 - geo.t0);
-  const b = analysis.bars.find((b) => t >= b[0] && t < b[0] + 300);
+  const b = analysis.bars.concat(liveBars()).find((b) => t >= b[0] && t < b[0] + 300);
   const tip = $("tip");
   if (!b) { tip.hidden = true; return; }
   tip.hidden = false;
-  tip.textContent = `${fmtET(b[0])} ET  O ${f2(b[1])} H ${f2(b[2])} L ${f2(b[3])} C ${f2(b[4])}`;
+  tip.textContent = `${fmtET(b[0])} ET  O ${f2(b[1])} H ${f2(b[2])} L ${f2(b[3])} C ${f2(b[4])}` + (b[6] != null ? `  VWAP ${f2(b[6])}` : "  live");
   tip.style.left = Math.min(x + 12, r.width - tip.offsetWidth - 4) + "px"; tip.style.top = (e.clientY - r.top + 12) + "px";
 });
 cv.addEventListener("mouseleave", () => { $("tip").hidden = true; });
@@ -480,6 +612,7 @@ async function loadState() {
     <dt>Ø pro Signal</dt><dd class="${sc.avg_r >= 0 ? "pos" : "neg"}">${sgn(sc.avg_r)} R</dd>
     ${sc.calibration ? `<dt>Time Machine sagte / real</dt><dd>${(sc.calibration.predicted * 100).toFixed(0)} % / ${(sc.calibration.actual * 100).toFixed(0)} %</dd><dt>Brier</dt><dd>${sc.calibration.brier}</dd>` : ""}
     ${sc.false_breakout_share != null ? `<dt>Fehlausbrüche unter den Stops</dt><dd>${(sc.false_breakout_share * 100).toFixed(0)} %</dd>` : ""}
+    ${["with", "neutral", "against"].map((k) => sc.by_liquid && sc.by_liquid[k].n ? `<dt>Liquid ${({ with: "Profis dafür", neutral: "neutral", against: "Profis dagegen" })[k]}</dt><dd>${sc.by_liquid[k].n} · ${sgn(sc.by_liquid[k].avg_r)} R</dd>` : "").join("")}
     <dt>Davon selbst gekauft</dt><dd>${sc.taken.n}${sc.taken.n ? " · " + sgn(sc.taken.avg_r) + " R" : ""}</dd></dl>`
     : `<p class="muted">Noch keine abgerechneten Signale. Jedes KAUFEN-Signal wird automatisch mitgeschrieben und nach Handelsschluss abgerechnet, auch wenn du es nicht handelst.</p>`;
   $("lHist").innerHTML = stateDoc.history.length ? stateDoc.history.map((c) => `<div class="lesson"><b>${esc(c.at)} · Gen. ${c.generation} · ${esc(c.field)}</b><div>${esc(c.why)}</div></div>`).join("") : `<p class="muted">Noch keine Lektion. Die Regel ändert sich erst, wenn eine Variante über mindestens 30 Trades klar besser ist.</p>`;
@@ -542,7 +675,7 @@ function tick() {
   $("clock").textContent = "New York " + fmtET(now) + " · " + LOCAL_TZ.split("/").pop().replace("_", " ") + " " + fmtLocal(now);
 }
 setInterval(tick, 15000); tick();
-setInterval(() => { if (!DEMO && analysis && analysis.market_open) { loadScan(); if (current) select(current); } }, 60000);
+setInterval(() => { if (!DEMO && analysis && analysis.market_open) refresh(); }, 60000);
 
 if (DEMO) {
   const n = $("demoNote"); n.hidden = false;

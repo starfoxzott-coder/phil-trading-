@@ -25,6 +25,30 @@ Nur Python 3.9+ und die Standardbibliothek, keine Installation. Kursdaten: Yahoo
 - **Zeitleiste unten**: oben New-York-Zeit, darunter deine Zeit; der farbige Balken ist die
   Positionsdauer.
 
+## Echtzeit und Zusatzdaten
+
+- **Live-Kerzen**: Während der Börsenzeit verbindet sich der Browser per WebSocket mit
+  Hyperliquid (dort handelt Liquid die Aktien als Perpetuals, z. B. `xyz:TSLA`) und zeichnet
+  die gerade laufende 5-Minuten-Kerze hohl, bis sie schließt, plus eine blaue Live-Kurslinie.
+  Für SPY und QQQ gibt es keinen 1:1-Perp; dort kommen die Live-Kerzen alle 5 Sekunden aus
+  Yahoos 1-Minuten-Daten. Schließt eine Kerze, prüft die App die Entscheidung neu. Der
+  Perp-Kurs kann ein paar Cent vom Börsenkurs abweichen; Einstieg, Stop und Ziel rechnet die
+  App immer auf den geschlossenen Börsenkerzen.
+- **Indikatoren im Chart**: VWAP (gelb) und EMA 20 (grau gestrichelt). Dazu RSI 14 und ATR 14
+  im Kasten „Markt-Kontext“. VWAP und EMA sind auch Filter, die die Lernschleife testet
+  („nur Ausbrüche über VWAP“).
+- **Perp-Daten** (live, öffentlich, ohne Schlüssel): Funding pro Stunde, Open Interest, Prämie
+  des Perps gegenüber dem Oracle-Kurs.
+- **Liquid-Positionierung**: wie profitable Trader („Smart Money“) und die verlierende Masse
+  positioniert sind. Diese Daten gibt es nur über den Liquid-Connector in Claude, nicht
+  öffentlich. Claude speichert sie in `data/intel.json` (mit Zeitstempel). Zum Aktualisieren
+  sag Claude: „Aktualisiere die Liquid-Positionierung für meine Watchlist“. Die App zeigt
+  sie als Hinweis und schreibt sie zu jedem Signal ins Journal. Ob sie wirklich hilft, zeigt
+  der Tab „Lernen“ (Ø R für „Profis dafür“, „neutral“ und „Profis dagegen“). Zur harten Regel
+  wird sie erst, wenn diese Zahlen das belegen.
+- **Quiver Quant** (Insider, Kongress, Dark Pool) ist noch nicht eingebaut: Dein Quiver-Konto
+  ist verbunden, hat aber kein aktives Abo, daher liefert es keine Daten.
+
 ## Was die App entscheidet
 
 | Anzeige | Bedeutung |
@@ -52,8 +76,8 @@ Lernzyklus (oder du drückst „Jetzt lernen“):
    Signale werden immer mitgeschrieben, auch wenn du sie nicht handelst.
 2. **Bewerten**: Trefferquote, Ø R, und ob die Wahrscheinlichkeiten der Time Machine
    gestimmt haben (Brier-Score, wie `brier_delta` bei Phil).
-3. **Regel anpassen**: 48 Varianten (Spanne 15/30 Min, Stop Mitte/Tief, Ziel 1–3R,
-   Volumenfilter) laufen über die letzten 60 Tage der Watchlist plus deine Live-Signale.
+3. **Regel anpassen**: 96 Varianten (Spanne 15/30 Min, Stop Mitte/Tief, Ziel 1–3R,
+   Volumenfilter, Trendfilter VWAP/EMA) laufen über die letzten 60 Tage der Watchlist plus deine Live-Signale.
    Die Regel wechselt nur, wenn eine Variante über mindestens 30 Trades klar besser ist
    (untere Schranke: Ø R minus Standardfehler), damit eine Glückswoche nichts kippt.
    Ticker, auf denen die Regel dauerhaft verliert, werden gesperrt. War die Simulation zu
@@ -75,8 +99,10 @@ Erst handeln, wenn das Journal über Wochen positiv ist, und dann klein.
 
 - `engine.py`: Daten, Einstieg, Stop/Ziel, Time Machine, Positionsgröße, Risiko-Check
 - `learn.py`: Abrechnen, Bewerten, Regel-Evolution, Retros
+- `liquid.py`: Hyperliquid-Live-Daten (Kerzen, Funding, Open Interest) und Liquid-Positionierung
 - `server.py`: Web-Server und Kommandozeile
 - `web/index.html`: Oberfläche mit Chart
+- `data/intel.json`: Liquid-Positionierung, von Claude geschrieben
 - `data/strategy.json`: aktuelle Regel und deine Limits. Journal und Lernhistorie entstehen
   dort beim Benutzen.
 

@@ -34,7 +34,8 @@ GRID = {
     "or_minutes": [15, 30],
     "stop": ["or-mid", "or-low"],
     "target_r": [1.0, 1.5, 2.0, 3.0],
-    "vol_x": [0, 1.2, 1.5],
+    "vol_x": [0, 1.5],
+    "trend": ["none", "vwap", "ema"],
 }
 MIN_SAMPLES = 30          # a variant needs this many trades to be chosen
 SWITCH_MARGIN = 0.03      # R the lower bound must improve by before switching
@@ -100,6 +101,9 @@ def record_signal(a):
            "p_target_share": (a.get("sim") or {}).get("target_share"),
            "edge_pp": (a.get("sim") or {}).get("edge_pp"),
            "shares": a["size"]["shares"], "loss_at_stop": a["size"]["loss_at_stop"],
+           "liquid_read": (a.get("intel") or {}).get("read"),
+           "smart_long": (a.get("intel") or {}).get("smart_long"),
+           "funding_pct_hr": (a.get("perp") or {}).get("funding_pct_hr"),
            "taken": False, "status": "open", "recorded_at": int(time.time())}
     rows.append(row)
     write_journal(rows)
@@ -161,6 +165,9 @@ def score(rows=None):
     s["false_breakouts"] = len(fast)
     s["false_breakout_share"] = round(len(fast) / len(stops), 3) if stops else None
     s["taken"] = engine.summarize([r for r in done if r.get("taken")])
+    # does Liquid's positioning separate good signals from bad ones? (evidence, not yet a rule)
+    s["by_liquid"] = {k: engine.summarize([r for r in done if r.get("liquid_read") == k])
+                      for k in ("with", "neutral", "against")}
     return s
 
 
@@ -173,7 +180,7 @@ def _variants():
 
 
 def _same(a, b):
-    return all(a[k] == b[k] for k in GRID)
+    return all(a.get(k, "none" if k == "trend" else None) == b.get(k, "none" if k == "trend" else None) for k in GRID)
 
 
 def evolve(strategy, watchlist, now_ts=None):
@@ -258,7 +265,8 @@ def evolve(strategy, watchlist, now_ts=None):
 
 def describe(p):
     vol = (" · Vol ≥%.1fx" % p["vol_x"]) if p["vol_x"] else ""
-    return "ORB %d Min · Stop %s · Ziel %gR%s" % (p["or_minutes"], p["stop"], p["target_r"], vol)
+    trend = {"vwap": " · über VWAP", "ema": " · über EMA20"}.get(p.get("trend", "none"), "")
+    return "ORB %d Min · Stop %s · Ziel %gR%s%s" % (p["or_minutes"], p["stop"], p["target_r"], vol, trend)
 
 
 # ---------------------------------------------------------------- 4. the cycle

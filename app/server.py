@@ -25,6 +25,7 @@ from urllib.parse import parse_qs, urlparse
 sys.path.insert(0, os.path.dirname(os.path.abspath(__file__)))
 import engine  # noqa: E402
 import learn  # noqa: E402
+import liquid  # noqa: E402
 
 WEB = os.path.join(os.path.dirname(os.path.abspath(__file__)), "web")
 ORDER = {"KAUFEN": 0, "LÄUFT": 1, "WARTEN": 1, "BEOBACHTEN": 2, "VORBEI": 3, "KEIN TRADE": 4}
@@ -37,6 +38,12 @@ def analyze(symbol, replays=2000, news=True):
     strategy = learn.load_strategy()
     date = engine.et_now().date().isoformat()
     a = engine.analyze(symbol, strategy, learn.today_trades(date), mc_replays=replays)
+    a["perp"] = liquid.perp_context(symbol)
+    a["live_coin"] = liquid.perp_coin(symbol)
+    a["intel"] = liquid.intel(symbol)
+    note = intel_note(a["intel"])
+    if note and a.get("plan"):
+        a["decision"]["reasons"].append(note)
     with _lock:
         sig = learn.record_signal(a)
     a["signal"] = sig
@@ -45,6 +52,14 @@ def analyze(symbol, replays=2000, news=True):
     if news:
         a["news"] = engine.fetch_news(symbol)
     return a
+
+
+def intel_note(i):
+    """Liquid's positioning as a hint. It does not change the call until learning has evidence for it."""
+    if not i or i.get("read") not in ("with", "against"):
+        return None
+    txt = "Liquid: Smart Money %.0f%% long, Masse %.0f%% long" % (i["smart_long"] * 100, i["crowd_long"] * 100)
+    return txt + (" – Profis halten gegen einen Long" if i["read"] == "against" else " – Profis stützen einen Long")
 
 
 def scan(replays=600):
@@ -65,6 +80,17 @@ def scan(replays=600):
         rows = list(ex.map(one, strategy["watchlist"]))
     rows.sort(key=lambda r: (ORDER.get(r["action"], 9), -(r.get("edge_pp") or -99)))
     return rows
+
+
+def yahoo_live(symbol):
+    """1m bars from Yahoo for tickers without a matching perp (SPY, QQQ ...)."""
+    d = engine.fetch_bars(symbol, "1d", "1m", ttl=4)
+    rows = [[b["t"], b["o"], b["h"], b["l"], b["c"], b["v"]] for b in d["bars"] if b["t"] % 60 == 0][-30:]
+    px = d["meta"].get("regularMarketPrice")
+    if rows and px:  # Yahoo's live price moves the newest bar before it closes
+        r = rows[-1]
+        r[2], r[3], r[4] = max(r[2], px), min(r[3], px), px
+    return {"coin": None, "source": "Yahoo 1m", "candles": rows}
 
 
 def state():
@@ -143,6 +169,8 @@ class Handler(BaseHTTPRequestHandler):
             return self._send(200, page, "text/html; charset=utf-8")
         if u.path == "/api/analyze":
             return self._guard(lambda: analyze(q.get("symbol", "SPY")))
+        if u.path == "/api/live":
+            return self._guard(lambda: liquid.live_candles(q.get("symbol", "SPY")) or yahoo_live(q.get("symbol", "SPY")))
         if u.path == "/api/scan":
             return self._guard(scan)
         if u.path == "/api/state":

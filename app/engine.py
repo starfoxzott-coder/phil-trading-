@@ -133,10 +133,11 @@ def fetch_bars(symbol, rng="60d", interval="5m", ttl=60):
         res = res[0]
         q = (res.get("indicators") or {}).get("quote", [{}])[0]
         bars = []
+        step = 60 if interval == "1m" else BAR
         for i, t in enumerate(res.get("timestamp") or []):
             o, h, l, c = (q.get(k, [None])[i] for k in ("open", "high", "low", "close"))
             v = (q.get("volume") or [0])[i] or 0
-            if None in (o, h, l, c) or t % BAR:
+            if None in (o, h, l, c) or t % step:
                 continue  # drop Yahoo's live tick and empty bars
             bars.append({"t": t, "o": o, "h": h, "l": l, "c": c, "v": v})
         return {"symbol": sym, "meta": res.get("meta", {}), "bars": bars}
@@ -173,7 +174,56 @@ def sessions(bars, now_ts=None):
         m = minute_of_day(et)
         if OPEN_MIN <= m < CLOSE_MIN:
             out.setdefault(et.date().isoformat(), []).append(b)
-    return dict(sorted(out.items()))
+    out = dict(sorted(out.items()))
+    annotate(out)
+    return out
+
+
+def annotate(sess):
+    """Add session VWAP, a 20-bar EMA and a 14-bar RSI to every bar (once per bar dict).
+
+    The EMA and RSI run across days on regular-session bars only; the VWAP
+    restarts each morning. Each value uses only that bar and the bars before it.
+    """
+    k = 2 / 21.0
+    ema = gain = loss = prev = None
+    n = 0
+    for day in sess.values():
+        pv = vol = 0.0
+        for b in day:
+            if "vwap" not in b:
+                typ = (b["h"] + b["l"] + b["c"]) / 3
+                pv += typ * b["v"]
+                vol += b["v"]
+                b["vwap"] = pv / vol if vol else typ
+            else:
+                pv, vol = b["_pv"], b["_vol"]
+            b["_pv"], b["_vol"] = pv, vol
+            if "ema" not in b:
+                ema = b["c"] if ema is None else ema + k * (b["c"] - ema)
+                if prev is not None:
+                    ch = b["c"] - prev
+                    n += 1
+                    g, l_ = max(ch, 0), max(-ch, 0)
+                    if gain is None:
+                        gain, loss = g, l_
+                    else:  # Wilder smoothing
+                        gain, loss = (gain * 13 + g) / 14, (loss * 13 + l_) / 14
+                b["ema"] = ema
+                b["rsi"] = 100 - 100 / (1 + gain / loss) if n >= 14 and loss else (100.0 if n >= 14 else None)
+                b["_g"], b["_l"], b["_n"] = gain, loss, n
+            else:
+                ema, gain, loss, n = b["ema"], b["_g"], b["_l"], b["_n"]
+            prev = b["c"]
+
+
+def atr(day_bars, n=14):
+    trs = []
+    for i, b in enumerate(day_bars):
+        pc = day_bars[i - 1]["c"] if i else b["o"]
+        trs.append(max(b["h"] - b["l"], abs(b["h"] - pc), abs(b["l"] - pc)))
+    tail = trs[-n:]
+    return sum(tail) / len(tail) if tail else None
 
 
 # ---------------------------------------------------------------- the rule
@@ -221,6 +271,11 @@ def find_trigger(day_bars, orr, params, rules):
             return None
         if b["c"] > orr["high"] and close_min >= lo:
             if params["vol_x"] and b["v"] < params["vol_x"] * orr["avg_vol"]:
+                continue
+            trend = params.get("trend", "none")
+            if trend == "vwap" and b["c"] <= b["vwap"]:
+                continue
+            if trend == "ema" and b["c"] <= b["ema"]:
                 continue
             return i
     return None
@@ -426,7 +481,12 @@ def analyze(symbol, strategy, today_trades=(), now_ts=None, mc_replays=2000):
     out = {"symbol": sym, "date": day_key, "live": live, "market_open": market_open,
            "now_et": now.strftime("%Y-%m-%d %H:%M"), "price": day[-1]["c"],
            "params": params, "rules": rules,
-           "bars": [[b["t"], round(b["o"], 4), round(b["h"], 4), round(b["l"], 4), round(b["c"], 4), b["v"]] for b in day],
+           "bars": [[b["t"], round(b["o"], 4), round(b["h"], 4), round(b["l"], 4), round(b["c"], 4), b["v"],
+                     round(b["vwap"], 4), round(b["ema"], 4)] for b in day],
+           "indicators": {"vwap": round(day[-1]["vwap"], 2), "ema20": round(day[-1]["ema"], 2),
+                          "rsi14": round(day[-1]["rsi"], 1) if day[-1].get("rsi") is not None else None,
+                          "atr14": round(atr(day), 3) if atr(day) else None,
+                          "above_vwap": day[-1]["c"] > day[-1]["vwap"], "above_ema": day[-1]["c"] > day[-1]["ema"]},
            "prev_close": None, "history": hist_sum,
            "history_trades": [{k: t[k] for k in ("date", "outcome", "r", "bars")} for t in hist[-15:]],
            "blocked": blocked, "session_end": None}

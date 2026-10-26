@@ -1,0 +1,67 @@
+{
+  "_comment": "Liquid-Positionierung (profitable vs. verlierende Trader). Nur über den Liquid-Connector in Claude abrufbar; Claude schreibt diese Datei. Frag Claude: 'Aktualisiere die Liquid-Positionierung für meine Watchlist'.",
+  "updated_at": "2026-10-26T16:45:39Z",
+  "source": "Liquid analyze_market (Claude)",
+  "symbols": {
+    "AAPL": {
+      "smart_long": 0.63,
+      "crowd_long": 0.16,
+      "coin": "xyz:AAPL",
+      "open_interest_usd": 91126479
+    },
+    "NVDA": {
+      "smart_long": 0.36,
+      "crowd_long": 0.77,
+      "coin": "xyz:NVDA",
+      "open_interest_usd": 81087920
+    },
+    "TSLA": {
+      "smart_long": 0.55,
+      "crowd_long": 0.43,
+      "coin": "xyz:TSLA",
+      "open_interest_usd": 48272463
+    },
+    "MSFT": {
+      "smart_long": 0.5,
+      "crowd_long": 0.51,
+      "coin": "xyz:MSFT",
+      "open_interest_usd": 28712513
+    },
+    "AMD": {
+      "smart_long": 0.45,
+      "crowd_long": 0.78,
+      "coin": "xyz:AMD",
+      "open_interest_usd": 18259040
+    },
+    "META": {
+      "smart_long": 0.2,
+      "crowd_long": 0.81,
+      "coin": "xyz:META",
+      "open_interest_usd": 102633647
+    },
+    "AMZN": {
+      "smart_long": 0.36,
+      "crowd_long": 0.87,
+      "coin": "xyz:AMZN",
+      "open_interest_usd": 23672231
+    },
+    "GOOGL": {
+      "smart_long": 0.45,
+      "crowd_long": 0.56,
+      "coin": "xyz:GOOGL",
+      "open_interest_usd": 101138341
+    },
+    "SPY": {
+      "smart_long": 0.55,
+      "crowd_long": 0.4,
+      "coin": "xyz:SP500",
+      "open_interest_usd": 389849856
+    },
+    "QQQ": {
+      "smart_long": 0.33,
+      "crowd_long": 0.71,
+      "coin": "xyz:XYZ100",
+      "open_interest_usd": 294435046
+    }
+  }
+}
