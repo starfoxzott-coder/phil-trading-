@@ -1,3 +1,5 @@
 data/journal.jsonl
 data/*.tmp
 __pycache__/
+data/my-trades.jsonl
+data/shots/

@@ -77,6 +77,39 @@ im Tab „Lernen“ siehst du später, ob Trades mit erfülltem Kriterium wirkli
 „So setzt du die Order“ gibt dir die vier Schritte: Kauf-Limit (Signalkurs + 0,1R, nicht
 nachjagen), Stop-Market-Verkauf, Take-Profit-Limit und spätestens 15:55 New York alles verkaufen.
 
+## Deine eigenen Trades: eintragen, bewerten, daraus lernen
+
+- **„Ich habe diesen Trade gemacht“** (im Kasten mit der Entscheidung): öffnet ein Formular,
+  vorausgefüllt mit dem Plan. Trag ein, was du wirklich gemacht hast: Kaufkurs, Stück, Stop,
+  Ziel, Uhrzeit, warum. Dazu ein **Foto oder Screenshot** (Datei wählen, am Handy die Kamera,
+  am PC mit Strg+V einfügen). Die App speichert ihren Plan **zum Zeitpunkt deines Kaufs** und
+  berechnet ihn nur aus den Kerzen, die da schon fertig waren.
+- **Tab „Meine Trades“**: Nach dem Verkauf „Trade abschließen“ (Verkaufskurs, Uhrzeit, wie raus)
+  und sagen, ob er **gut oder schlecht** war. Vergessen? „Automatisch aus Kursdaten“ rechnet
+  ihn mit deinem Stop und Ziel ab. Trades vom Vortag, die noch offen sind, rechnet die
+  Lernschleife abends so ab (als „geschätzt“ markiert).
+- **Was die App selbst erkennt**, mit Beleg aus den Zahlen: gekauft, obwohl die App abgeraten
+  hat; über dem Kauf-Limit gekauft (nachgejagt); vor dem Kerzenschluss gekauft; Stop weiter als
+  im Plan; zu früh verkauft (der Plan hätte mehr gebracht); über die Glattstellzeit gehalten;
+  Position größer als dein Verlustlimit. Dazu kommen deine eigenen Angaben (Stop verschoben,
+  aus Angst etwas zu verpassen, Verlust zurückholen wollen).
+- **Deine Bilanz**: du gegen den Plan der App auf denselben Trades, Ergebnis mit befolgtem gegen
+  gebrochenen Plan, Fehler nach Häufigkeit und Kosten.
+- **Persönliche Regeln**: Ein Fehler, der mindestens 3-mal vorkam und dich Geld gekostet hat,
+  wird zur Regel. Sie steht dann bei jeder Order unter „So setzt du die Order“ und im
+  abendlichen Retro.
+- **„Bild von Claude auslesen“ und „Von Claude auswerten“** (optional): Claude liest Kurs, Stop,
+  Ziel und Zeiten aus deinem Screenshot ins Formular und schreibt nach dem Abschluss eine kurze
+  Lektion (gut / gemischt / schlecht, was beibehalten, was ändern). Dafür
+  `pip install anthropic` und einen Anthropic-API-Schlüssel (`ANTHROPIC_API_KEY`) setzen. Das
+  kostet pro Auswertung ein paar Cent (Modell Claude Opus 5.5). Ohne Schlüssel bleiben die
+  zwei Knöpfe grau, alles andere funktioniert.
+- Deine Trades (`data/my-trades.jsonl`) und Bilder (`data/shots/`) bleiben auf deinem Rechner
+  und werden nicht in git eingecheckt.
+- **Vom Handy aus** (Foto direkt vom Broker-Bildschirm): `python3 app/server.py --host 0.0.0.0`
+  und am Handy im selben WLAN `http://<IP deines PCs>:8787` öffnen. Dann ist die App für alle
+  im WLAN erreichbar, also nur im eigenen Netz so starten.
+
 ## Was die App entscheidet
 
 | Anzeige | Bedeutung |
@@ -129,6 +162,8 @@ Erst handeln, wenn das Journal über Wochen positiv ist, und dann klein.
 - `optimize.py`: Stop und Ziel pro Signal (Simulation + echte Ausbrüche, nach Kosten)
 - `learn.py`: Abrechnen, Bewerten, Regel-Evolution, Retros
 - `liquid.py`: Hyperliquid-Live-Daten (Kerzen, Funding, Open Interest) und Liquid-Positionierung
+- `trades.py`: deine eigenen Trades, Bilder, erkannte Fehler, persönliche Regeln
+- `claude_review.py`: optionale Bildauswertung und Trade-Bewertung durch Claude
 - `server.py`: Web-Server und Kommandozeile
 - `web/index.html`: Oberfläche mit Chart
 - `data/intel.json`: Liquid-Positionierung, von Claude geschrieben

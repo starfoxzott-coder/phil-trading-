@@ -14,6 +14,7 @@ import argparse
 import concurrent.futures
 import json
 import os
+import re
 import sys
 import threading
 import time
@@ -26,6 +27,7 @@ sys.path.insert(0, os.path.dirname(os.path.abspath(__file__)))
 import engine  # noqa: E402
 import learn  # noqa: E402
 import liquid  # noqa: E402
+import trades  # noqa: E402
 
 WEB = os.path.join(os.path.dirname(os.path.abspath(__file__)), "web")
 ORDER = {"KAUFEN": 0, "LÄUFT": 1, "WARTEN": 1, "BEOBACHTEN": 2, "VORBEI": 3, "KEIN TRADE": 4}
@@ -34,14 +36,19 @@ HEAD = (b'<!doctype html><html lang="de"><head><meta charset="utf-8">'
         b'<meta name="viewport" content="width=device-width, initial-scale=1, viewport-fit=cover"></head><body>')
 
 
-def analyze(symbol, replays=2000, news=True):
+def analyze(symbol, replays=2000, news=True, now_ts=None):
+    """The app's call for one ticker; with now_ts, the call as it stood at that moment."""
     strategy = learn.load_strategy()
-    date = engine.et_now().date().isoformat()
+    date = engine.et_now(now_ts).date().isoformat()
     intel = liquid.intel(symbol)
-    a = engine.analyze(symbol, strategy, learn.today_trades(date), mc_replays=replays, intel=intel)
+    taken = learn.today_trades(date)
+    counted = {r["id"] for r in taken}
+    taken += [t for t in trades.today_risk(date) if t.get("signal_id") not in counted]
+    a = engine.analyze(symbol, strategy, taken, now_ts=now_ts, mc_replays=replays, intel=intel)
     a["perp"] = liquid.perp_context(symbol)
     a["live_coin"] = liquid.perp_coin(symbol)
     a["intel"] = intel
+    a["my_trades"] = trades.for_day(symbol, a["date"])
     with _lock:
         sig = learn.record_signal(a)
     a["signal"] = sig
@@ -82,6 +89,59 @@ def yahoo_live(symbol):
         r = rows[-1]
         r[2], r[3], r[4] = max(r[2], px), min(r[3], px), px
     return {"coin": None, "source": "Yahoo 1m", "candles": rows}
+
+
+def trades_state():
+    rows = trades.all_trades()
+    rows.sort(key=lambda t: (t["date"], t["time"]), reverse=True)
+    return {"trades": rows, "summary": trades.summary(), "mistakes": trades.MISTAKES,
+            "claude": claude_ok()}
+
+
+def claude_ok():
+    try:
+        import claude_review
+        return claude_review.available()
+    except Exception:
+        return False
+
+
+def open_trade(body):
+    analysis = None
+    try:  # the app's view at the moment you bought, from the bars closed by then
+        date = body.get("date") or engine.et_now().date().isoformat()
+        at = trades.et_ts(date, body.get("time") or engine.et_now().strftime("%H:%M")) + 1
+        analysis = analyze(body.get("symbol", ""), replays=600, news=False, now_ts=min(at, time.time()))
+    except (engine.EngineError, ValueError):
+        pass  # a ticker without data can still be logged, just without the app's plan
+    t = trades.open_trade(body, analysis)
+    if t.get("signal_id"):
+        learn.mark_taken(t["signal_id"], True)
+    return t
+
+
+def review(trade_id):
+    import claude_review
+    t = trades.get(trade_id)
+    if not t:
+        raise ValueError("Trade nicht gefunden")
+    if t["status"] != "closed":
+        raise ValueError("Erst den Trade abschließen, dann auswerten")
+    try:
+        r = claude_review.review_trade(t)
+    except claude_review.ReviewError as e:
+        raise ValueError(str(e))
+    return trades.set_review(trade_id, r)
+
+
+def read_shot(body):
+    import claude_review
+    name = trades.save_image("draft", body.get("image"), "read")
+    try:
+        fields = claude_review.read_screenshot([name], body.get("symbol"))
+    except claude_review.ReviewError as e:
+        return {"image_name": name, "error": str(e)}
+    return {"image_name": name, "fields": fields}
 
 
 def state():
@@ -170,6 +230,15 @@ class Handler(BaseHTTPRequestHandler):
             return self._guard(scan)
         if u.path == "/api/state":
             return self._guard(state)
+        if u.path == "/api/trades":
+            return self._guard(trades_state)
+        if u.path.startswith("/shots/"):
+            p = trades.shot_path(u.path[len("/shots/"):])
+            if not p:
+                return self._send(404, {"error": "not found"})
+            ext = p.rsplit(".", 1)[1]
+            with open(p, "rb") as f:
+                return self._send(200, f.read(), {"jpg": "image/jpeg"}.get(ext, "image/" + ext))
         self._send(404, {"error": "not found"})
 
     def do_POST(self):
@@ -185,6 +254,22 @@ class Handler(BaseHTTPRequestHandler):
             return self._guard(lambda: (learn.mark_taken(body["id"], body.get("taken", True)), state())[1])
         if p == "/api/settings":
             return self._guard(lambda: save_settings(body))
+        if p == "/api/trades":
+            return self._guard(lambda: open_trade(body))
+        if p == "/api/read-shot":
+            return self._guard(lambda: read_shot(body))
+        m = re.match(r"^/api/trades/([A-Za-z0-9_.-]+)/(close|image|rate|review|delete)$", p)
+        if m:
+            tid, op = m.groups()
+            if op == "close":
+                return self._guard(lambda: trades.close_trade(tid, body, learn.load_strategy()))
+            if op == "image":
+                return self._guard(lambda: trades.add_image(tid, body.get("image"), body.get("when", "extra")))
+            if op == "rate":
+                return self._guard(lambda: trades.rate(tid, body.get("rating"), body.get("note")))
+            if op == "review":
+                return self._guard(lambda: review(tid))
+            return self._guard(lambda: (trades.delete(tid), {"ok": True})[1])
         self._send(404, {"error": "not found"})
 
 

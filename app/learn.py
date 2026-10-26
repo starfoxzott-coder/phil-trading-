@@ -288,9 +288,12 @@ def describe(p):
 # ---------------------------------------------------------------- 4. the cycle
 
 def cycle(now_ts=None):
+    import trades
     strategy = load_strategy()
     watchlist = strategy["watchlist"]
     settled = settle(strategy, now_ts)
+    mine_closed = trades.settle_open(strategy, engine.et_now(now_ts).date().isoformat())
+    mine = trades.summary()
     changes, ranking, current, sc = evolve(strategy, watchlist, now_ts)
     stamp = datetime.datetime.now().strftime("%Y-%m-%d %H:%M")
     strategy["learned_at"] = stamp
@@ -313,6 +316,17 @@ def cycle(now_ts=None):
         lines += ["  - **%s**: %s" % (c["field"], c["why"]) for c in changes]
     else:
         lines.append("- Keine Änderung: kein Kandidat schlägt die aktuelle Regel deutlich genug")
+    if mine["n"]:
+        lines.append("- Deine Trades: %d abgeschlossen, Ø %+.2fR, Trefferquote %.0f%%" % (mine["n"], mine["avg_r"], mine["win_rate"] * 100))
+        if mine.get("vs_plan"):
+            v = mine["vs_plan"]
+            lines.append("  - Gegenüber dem Plan der App: du Ø %+.2fR, Plan Ø %+.2fR (n=%d)" % (v["you"], v["plan"], v["n"]))
+        for m in mine["mistakes"][:3]:
+            lines.append("  - %s: %d×, Ø %+.2fR" % (m["label"], m["n"], m["avg_r"]))
+        for r in mine["rules"]:
+            lines.append("  - **Persönliche Regel**: %s (%s)" % (r["text"], r["why"]))
+    if mine_closed:
+        lines.append("- Automatisch abgerechnet (offen gelassen): " + ", ".join("%s %s %+.2fR" % (t["symbol"], t["date"], t["r"] or 0) for t in mine_closed))
     _append(RETROS, "\n".join(lines) + "\n\n")
     return {"settled": settled, "changes": changes, "ranking": ranking, "current": current,
             "score": sc, "strategy": strategy}

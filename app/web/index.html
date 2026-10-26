@@ -24,6 +24,7 @@
   --candle-up: #2fc285; --candle-dn: #ff6b66; --grid: rgba(228,235,232,.06); color-scheme: dark }
 
 * { box-sizing: border-box }
+[hidden] { display: none !important }
 body { background: var(--bg); color: var(--fg); font: 14px/1.45 var(--f-ui); margin: 0;
   padding-left: max(16px, env(safe-area-inset-left, 0px)); padding-right: max(16px, env(safe-area-inset-right, 0px)); padding-block: 0 32px }
 .num { font-family: var(--f-num); font-variant-numeric: tabular-nums }
@@ -124,6 +125,36 @@ input { font: inherit; padding: 6px 9px; border: 1px solid var(--line); border-r
 .heat td small { display: block; color: var(--muted); font-size: 10px }
 .heat td.pick { outline: 2px solid var(--accent); outline-offset: -1px; font-weight: 700 }
 .heat td.def { box-shadow: inset 0 0 0 1px var(--muted) }
+.overlay { position: fixed; inset: 0; z-index: 20; background: rgba(0,0,0,.45); display: grid; place-items: center;
+  padding: max(16px, env(safe-area-inset-top, 0px)) max(16px, env(safe-area-inset-right, 0px)) max(16px, env(safe-area-inset-bottom, 0px)) max(16px, env(safe-area-inset-left, 0px)) }
+.dlg { background: var(--panel); color: var(--fg); border: 1px solid var(--line); border-radius: 10px; width: min(560px, 100%); max-height: 100%; overflow: auto; padding: 18px }
+.dlg h3 { margin: 0 0 4px; font-size: 18px }
+.dlg .row { display: flex; flex-wrap: wrap; gap: 8px; align-items: center; margin-top: 12px }
+.dlg img { max-width: 100%; max-height: 220px; border-radius: 6px; border: 1px solid var(--line); margin-top: 10px; display: block }
+.filebtn { display: inline-flex; align-items: center; cursor: pointer }
+textarea { font: inherit; padding: 6px 9px; border: 1px solid var(--line); border-radius: 6px; background: var(--panel); color: var(--fg); width: 100% }
+select { font: inherit; padding: 6px 9px; border: 1px solid var(--line); border-radius: 6px; background: var(--panel); color: var(--fg) }
+.wide { display: flex; flex-direction: column; gap: 4px; font-size: 12px; color: var(--muted); margin-top: 10px }
+.mine-top { display: grid; grid-template-columns: repeat(2, minmax(0, 1fr)); gap: 16px; padding-top: 16px }
+@media (max-width: 720px) { .mine-top { grid-template-columns: minmax(0, 1fr) } }
+.mlist { display: grid; grid-template-columns: repeat(auto-fill, minmax(min(100%, 420px), 1fr)); gap: 16px; margin-top: 16px }
+.tcard header { display: flex; flex-wrap: wrap; gap: 6px 10px; align-items: center; margin-bottom: 6px }
+.tcard .res { font: 600 16px var(--f-num); margin: 4px 0 8px }
+.tcard .res span { font: 12px var(--f-ui) }
+.tgrid { display: flex; flex-wrap: wrap; gap: 12px; align-items: flex-start }
+.mini { width: auto; font-size: 12.5px } .mini td, .mini th { padding: 3px 10px 3px 0 }
+.thumbs { display: flex; flex-wrap: wrap; gap: 6px }
+.thumb { width: 96px; height: 64px; object-fit: cover; border-radius: 5px; border: 1px solid var(--line) }
+.devs { margin: 0 0 6px; padding-left: 18px; font-size: 12.5px }
+.review { background: var(--range); border-radius: 6px; padding: 8px 12px; font-size: 13px; margin: 8px 0 }
+.review p { margin: 4px 0 }
+.acts { display: flex; flex-wrap: wrap; gap: 6px; margin-top: 10px }
+.acts .btn { font-size: 12.5px; padding: 5px 10px }
+.danger { color: var(--loss) !important }
+.closeform { margin-top: 12px; border-top: 1px solid var(--line); padding-top: 12px }
+.tags { border: 0; padding: 0; margin: 10px 0 0; display: flex; flex-wrap: wrap; gap: 4px 14px; font-size: 12.5px }
+.tags legend { font-size: 12px; color: var(--muted); margin-bottom: 4px; padding: 0 }
+.myrules { border-left: 3px solid var(--wait); padding: 6px 10px; margin-top: 12px; background: var(--wait-soft); border-radius: 0 6px 6px 0; font-size: 12.5px }
 .smbar { display: flex; height: 10px; border-radius: 3px; overflow: hidden; background: var(--loss-soft); margin: 4px 0 2px }
 .smbar div { background: var(--win) }
 .live { display: inline-flex; align-items: center; gap: 5px; font-size: 11px; font-weight: 700; color: var(--accent); letter-spacing: .05em }
@@ -158,6 +189,7 @@ td { padding: 6px 8px; border-bottom: 1px solid var(--line); vertical-align: top
   <span class="spacer"></span>
   <nav class="tabs" role="tablist">
     <button role="tab" id="tab-desk" aria-selected="true">Trading</button>
+    <button role="tab" id="tab-mine" aria-selected="false">Meine Trades</button>
     <button role="tab" id="tab-learn" aria-selected="false">Lernen</button>
   </nav>
   <button class="btn" id="learnBtn" title="Abrechnen, bewerten, Regel anpassen">Jetzt lernen</button>
@@ -205,6 +237,39 @@ td { padding: 6px 8px; border-bottom: 1px solid var(--line); vertical-align: top
   </div>
 </section>
 
+<section id="view-mine" hidden>
+  <div class="mine-top">
+    <div class="sec"><h2>Deine Bilanz</h2><div id="mSum"></div>
+      <button class="btn" id="newTradeBtn" style="margin-top:12px">+ Eigenen Trade eintragen</button></div>
+    <div class="sec"><h2>Deine persönlichen Regeln</h2><div id="mRules"></div></div>
+  </div>
+  <div class="mlist" id="mList"></div>
+</section>
+
+<div class="overlay" id="tradeDlg" hidden role="dialog" aria-modal="true" aria-labelledby="tdTitle">
+  <form class="dlg" id="tradeForm">
+    <h3 id="tdTitle">Ich habe diesen Trade gemacht</h3>
+    <p class="note" id="tdPlanNote" style="margin-top:0"></p>
+    <div class="form">
+      <label for="tdSym">Ticker<input id="tdSym" required autocomplete="off"></label>
+      <label for="tdTime">Kaufzeit (New York)<input id="tdTime" placeholder="10:15"></label>
+      <label for="tdEntry">Kaufkurs<input id="tdEntry" inputmode="decimal" required></label>
+      <label for="tdShares">Stück<input id="tdShares" inputmode="numeric" required></label>
+      <label for="tdStop">Stop-Loss<input id="tdStop" inputmode="decimal"></label>
+      <label for="tdTarget">Take-Profit<input id="tdTarget" inputmode="decimal"></label>
+    </div>
+    <label class="wide" for="tdNote">Warum hast du so gehandelt? (optional)<textarea id="tdNote" rows="2"></textarea></label>
+    <div class="row">
+      <label class="btn ghost filebtn">Foto / Screenshot<input type="file" id="tdFile" accept="image/*" capture="environment" hidden></label>
+      <button type="button" class="btn ghost" id="tdRead">Bild von Claude auslesen</button>
+      <span class="note" style="margin:0">oder Screenshot mit Strg+V einfügen</span>
+    </div>
+    <img id="tdPreview" alt="Vorschau des Screenshots" hidden>
+    <p class="note" id="tdMsg" role="status"></p>
+    <div class="row"><button class="btn" id="tdSave">Speichern</button><button type="button" class="btn ghost" id="tdCancel">Abbrechen</button></div>
+  </form>
+</div>
+
 <section id="view-learn" hidden>
   <div class="grid2" style="padding-top:16px">
     <div class="sec"><h2>Aktive Regel</h2><div id="lRule"></div></div>
@@ -248,6 +313,7 @@ function demoApi(path) {
   if (path === "/api/scan") return DEMO.scan;
   if (path === "/api/state") return DEMO.state;
   if (path === "/api/learn") return DEMO.learn;
+  if (path === "/api/trades") return DEMO.trades || { trades: [], summary: { n: 0, open: 0, rules: [], mistakes: [] }, mistakes: {}, claude: false };
   throw new Error("Im Demo-Modus nicht verfügbar – starte die App lokal");
 }
 
@@ -292,8 +358,9 @@ function renderAnalysis() {
     <div><div class="act">${esc(d.action)}</div><div class="sym">${esc(a.symbol)} <span class="num muted">${f2(a.price)}</span>
       ${a.quality ? `<span class="grade ${a.quality.grade}" title="Qualität" style="width:24px;height:24px;font-size:14px;vertical-align:-6px;margin-left:6px">${a.quality.grade}</span>` : ""}</div></div>
     <ul>${d.reasons.map((r) => `<li>${esc(r)}</li>`).join("") || "<li>Keine Auffälligkeiten</li>"}</ul>
-    ${a.signal && (d.action === "KAUFEN" || d.action === "LÄUFT") ? `<div></div><div><button class="btn ghost" id="takeBtn">${a.signal.taken ? "✓ als gekauft markiert" : "Ich habe gekauft (zählt fürs Tageslimit)"}</button></div>` : ""}`;
-  if ($("takeBtn")) $("takeBtn").onclick = async () => { await api("/api/taken", { id: a.signal.id, taken: !a.signal.taken }); select(a.symbol); };
+    ${p && a.market_open ? `<div></div><div style="display:flex;flex-wrap:wrap;gap:8px;align-items:center"><button class="btn ${d.action === "KAUFEN" ? "" : "ghost"}" id="didBtn">Ich habe diesen Trade gemacht</button>
+      ${(a.my_trades || []).length ? `<span class="note" style="margin:0">${a.my_trades.length} Trade(s) von dir heute eingetragen</span>` : ""}</div>` : ""}`;
+  if ($("didBtn")) $("didBtn").onclick = () => openTradeDialog({ symbol: a.symbol, entry: a.order ? a.order.buy_limit : p.entry, shares: a.size.shares, stop: p.stop, target: p.target, fromPlan: true });
 
   if (p) {
     const hold = p.end_t - p.entry_t;
@@ -386,7 +453,8 @@ function renderOrder() {
     <li>Take-Profit: Limit-Verkauf bei <b class="pos">${f2(o.target)}</b> (+$${a.size.gain_at_target.toFixed(2)}, ${p.target_r}R)
       <small>Kommt in ${Math.round(s.p_target * 100)} % der Simulationen zuerst${s.hist_win != null ? `; ${Math.round(s.hist_win * 100)} % Gewinner bei ${s.n_hist} echten Ausbrüchen` : ""}.</small></li>
     <li>Spätestens <b>${esc(o.flat_by)} ET</b> (${fmtLocal(p.end_t)} deine Zeit) alles verkaufen, egal wie es steht
-      <small>Typischer Ausstieg laut Simulation gegen ${fmtET(s.median_exit_t)} ET. Nichts über Nacht halten.</small></li></ol>`;
+      <small>Typischer Ausstieg laut Simulation gegen ${fmtET(s.median_exit_t)} ET. Nichts über Nacht halten.</small></li></ol>`
+    + ((mine.doc && mine.doc.summary.rules.length) ? `<div class="myrules"><b>Deine Regeln aus deinen Trades:</b><ul style="margin:4px 0 0;padding-left:18px">${mine.doc.summary.rules.map((r) => `<li>${esc(r.text)} <span class="muted">(${esc(r.why)})</span></li>`).join("")}</ul></div>` : "");
 }
 function renderHeat() {
   const a = analysis, op = a.optimizer, box = $("heatBox");
@@ -511,6 +579,7 @@ function drawChart() {
   let lo = Math.min(...all.map((b) => b[3])), hi = Math.max(...all.map((b) => b[2]));
   if (p) { lo = Math.min(lo, p.stop); hi = Math.max(hi, p.target); }
   if (s) for (const f of s.fan) { lo = Math.min(lo, f.p25); hi = Math.max(hi, f.p75); }
+  for (const t of a.my_trades || []) for (const v of [t.entry, t.stop, t.target, t.exit]) if (v) { lo = Math.min(lo, v); hi = Math.max(hi, v); }
   const pad = (hi - lo) * 0.06; lo -= pad; hi += pad;
   const Y = (v) => padT + (hi - v) / (hi - lo) * (H - padT - padB);
   geo = { X, Y, padL, padR, padT, padB, W, H, t0, t1, lo, hi };
@@ -618,6 +687,19 @@ function drawChart() {
     const w = Math.max(1, bw * 0.66), y1 = Y(Math.max(o, c)), y2 = Y(Math.min(o, c));
     ctx.fillRect(x - w / 2, y1, w, Math.max(1, y2 - y1));
   }
+  // your own trades on this day: entry ▲, exit ●, your stop/target as short dashes
+  for (const t of a.my_trades || []) {
+    const xe = X(t.entry_ts), ye = Y(t.entry);
+    ctx.fillStyle = C.accent; ctx.beginPath(); ctx.moveTo(xe, ye - 2); ctx.lineTo(xe - 6, ye + 9); ctx.lineTo(xe + 6, ye + 9); ctx.closePath(); ctx.fill();
+    ctx.font = `700 10.5px ${css("--f-ui")}`; ctx.textBaseline = "top"; ctx.fillText("Du " + f2(t.entry), xe + 8, ye + 2);
+    const xEnd = t.exit_ts ? X(t.exit_ts) : X(a.flat_ts);
+    ctx.setLineDash([6, 3]); ctx.lineWidth = 1.5;
+    if (t.stop) { ctx.strokeStyle = C.loss; line(xe, Y(t.stop), xEnd, Y(t.stop)); }
+    if (t.target) { ctx.strokeStyle = C.win; line(xe, Y(t.target), xEnd, Y(t.target)); }
+    ctx.setLineDash([]); ctx.lineWidth = 1;
+    if (t.exit_ts) { ctx.fillStyle = (t.r || 0) >= 0 ? C.win : C.loss; ctx.strokeStyle = C.panel; ctx.beginPath(); ctx.arc(X(t.exit_ts), Y(t.exit), 6, 0, 7); ctx.fill(); ctx.stroke(); }
+  }
+  ctx.textBaseline = "middle";
   // last price
   const last = bars[bars.length - 1];
   if (a.live && lp == null) { ctx.setLineDash([2, 2]); ctx.strokeStyle = C.muted; line(padL, Y(last[4]), W - padR, Y(last[4])); ctx.setLineDash([]); }
@@ -750,14 +832,183 @@ $("learnBtn").onclick = async () => {
 };
 function alertBox(msg) { const n = $("demoNote"); n.hidden = false; n.textContent = msg; }
 
+/* ------------------------------------------------ my trades: log, close, rate, learn */
+let mine = { doc: null, draftImage: null, draftName: null };
+async function loadMine() {
+  try { mine.doc = await api("/api/trades"); } catch (e) { mine.doc = { trades: [], summary: { n: 0, rules: [], mistakes: [] }, mistakes: {}, claude: false }; }
+  renderMine();
+  if (analysis) renderOrder();
+}
+function shrinkImage(file) {
+  // phone photos are huge: scale to 1600 px and JPEG before upload
+  return new Promise((resolve, reject) => {
+    const fr = new FileReader();
+    fr.onerror = () => reject(new Error("Bild konnte nicht gelesen werden"));
+    fr.onload = () => {
+      const img = new Image();
+      img.onerror = () => reject(new Error("Kein gültiges Bild"));
+      img.onload = () => {
+        const k = Math.min(1, 1600 / Math.max(img.width, img.height));
+        const c = document.createElement("canvas"); c.width = Math.round(img.width * k); c.height = Math.round(img.height * k);
+        c.getContext("2d").drawImage(img, 0, 0, c.width, c.height);
+        resolve(c.toDataURL("image/jpeg", 0.85));
+      };
+      img.src = fr.result;
+    };
+    fr.readAsDataURL(file);
+  });
+}
+function nowET() { return fmtET(Date.now() / 1000); }
+function openTradeDialog(prefill) {
+  const p = prefill || {};
+  mine.draftImage = null; mine.draftName = null;
+  $("tdSym").value = p.symbol || current || "";
+  $("tdEntry").value = p.entry ?? ""; $("tdShares").value = p.shares ?? ""; $("tdStop").value = p.stop ?? ""; $("tdTarget").value = p.target ?? "";
+  $("tdTime").value = p.time || nowET(); $("tdNote").value = "";
+  $("tdPreview").hidden = true; $("tdMsg").textContent = ""; $("tdRead").disabled = true;
+  $("tdRead").title = mine.doc && mine.doc.claude ? "" : "Braucht pip install anthropic und einen Anthropic-Schlüssel";
+  $("tdPlanNote").textContent = p.fromPlan ? "Vorausgefüllt mit dem Plan der App. Trag ein, was du wirklich gemacht hast." : "";
+  $("tradeDlg").hidden = false; $("tdEntry").focus();
+}
+function closeTradeDialog() { $("tradeDlg").hidden = true; }
+async function setDraftImage(file) {
+  try {
+    mine.draftImage = await shrinkImage(file); mine.draftName = null;
+    $("tdPreview").src = mine.draftImage; $("tdPreview").hidden = false;
+    $("tdRead").disabled = !(mine.doc && mine.doc.claude); $("tdMsg").textContent = "Bild angehängt.";
+  } catch (e) { $("tdMsg").textContent = e.message; }
+}
+$("tdFile").onchange = (e) => { const f = e.target.files[0]; if (f) setDraftImage(f); e.target.value = ""; };
+$("tradeDlg").addEventListener("paste", (e) => {
+  const it = [...(e.clipboardData || {}).items || []].find((i) => i.type.startsWith("image/"));
+  if (it) { e.preventDefault(); setDraftImage(it.getAsFile()); }
+});
+$("tdCancel").onclick = closeTradeDialog;
+$("tradeDlg").addEventListener("keydown", (e) => { if (e.key === "Escape") closeTradeDialog(); });
+$("tdRead").onclick = async () => {
+  if (!mine.draftImage) return;
+  $("tdRead").disabled = true; $("tdMsg").textContent = "Claude liest das Bild…";
+  try {
+    const r = await api("/api/read-shot", { image: mine.draftImage, symbol: $("tdSym").value });
+    mine.draftName = r.image_name; mine.draftImage = null;
+    if (r.error) { $("tdMsg").textContent = r.error; return; }
+    const f = r.fields, set = (id, v) => { if (v != null && v !== "") $(id).value = v; };
+    set("tdSym", f.symbol); set("tdEntry", f.entry); set("tdShares", f.shares); set("tdStop", f.stop); set("tdTarget", f.target); set("tdTime", f.entry_time_et);
+    $("tdMsg").textContent = "Claude: " + (f.what_i_see || "ausgelesen") + (f.side === "short" ? " Achtung: Short-Trades kann die App nicht auswerten." : "") + " Bitte prüfen.";
+  } catch (e) { $("tdMsg").textContent = e.message; }
+  finally { $("tdRead").disabled = false; }
+};
+$("tradeForm").onsubmit = async (e) => {
+  e.preventDefault();
+  const body = { symbol: $("tdSym").value.trim().toUpperCase(), entry: $("tdEntry").value, shares: $("tdShares").value,
+    stop: $("tdStop").value, target: $("tdTarget").value, time: $("tdTime").value, note: $("tdNote").value };
+  if (mine.draftImage) body.image = mine.draftImage; else if (mine.draftName) body.image_name = mine.draftName;
+  $("tdSave").disabled = true; $("tdMsg").textContent = "Speichert…";
+  try { await api("/api/trades", body); closeTradeDialog(); await loadMine(); if (current === body.symbol) refresh(); show("mine"); }
+  catch (err) { $("tdMsg").textContent = err.message; }
+  finally { $("tdSave").disabled = false; }
+};
+
+const RATING = { good: "War gut", bad: "War schlecht", neutral: "Neutral" };
+const REASON = { target: "Ziel erreicht", stop: "Stop ausgelöst", manual: "Selbst verkauft", flat: "Zur Glattstellzeit verkauft" };
+function renderMine() {
+  const d = mine.doc; if (!d) return;
+  const s = d.summary;
+  $("mSum").innerHTML = s.n ? `<dl class="kv"><dt>Abgeschlossene Trades</dt><dd>${s.n}${s.open ? " · " + s.open + " offen" : ""}</dd>
+      <dt>Trefferquote</dt><dd>${(s.win_rate * 100).toFixed(0)} %</dd><dt>Ø pro Trade</dt><dd class="${s.avg_r >= 0 ? "pos" : "neg"}">${sgn(s.avg_r)} R</dd>
+      <dt>Gewinn/Verlust gesamt</dt><dd class="${s.pnl >= 0 ? "pos" : "neg"}">${sgn(s.pnl)} $</dd>
+      ${s.vs_plan ? `<dt>Du vs. Plan der App (n=${s.vs_plan.n})</dt><dd>${sgn(s.vs_plan.you)} / ${sgn(s.vs_plan.plan)} R</dd>` : ""}
+      ${s.discipline ? `<dt>Plan befolgt / nicht befolgt</dt><dd>${s.discipline.followed.n ? sgn(s.discipline.followed.avg_r) : "–"} / ${s.discipline.broke.n ? sgn(s.discipline.broke.avg_r) : "–"} R</dd>` : ""}
+      ${s.rated_good ? `<dt>Von dir „gut“ bewertet</dt><dd>${s.rated_good.n} · ${sgn(s.rated_good.avg_r)} R</dd>` : ""}
+      ${s.rated_bad ? `<dt>Von dir „schlecht“ bewertet</dt><dd>${s.rated_bad.n} · ${sgn(s.rated_bad.avg_r)} R</dd>` : ""}</dl>`
+    : `<p class="muted">${s.open ? s.open + " offener Trade. Schließ ihn ab, sobald du verkauft hast." : "Noch keine Trades. Drück bei einem Signal auf „Ich habe diesen Trade gemacht“ oder trag hier einen eigenen ein."}</p>`;
+  $("mRules").innerHTML = (s.rules.length ? `<ul class="steps">${s.rules.map((r) => `<li><b style="font-family:var(--f-ui)">${esc(r.text)}</b><small>${esc(r.why)}</small></li>`).join("")}</ul>`
+      : `<p class="muted">Noch keine. Ein Fehler wird zur Regel, wenn er mindestens 3-mal vorkam und dich Geld gekostet hat.</p>`)
+    + (s.mistakes.length ? `<table style="margin-top:10px"><thead><tr><th>Fehler</th><th>Anzahl</th><th>Ø R</th><th>vs. Plan</th></tr></thead><tbody>
+      ${s.mistakes.map((m) => `<tr><td>${esc(m.label)}</td><td class="num">${m.n}</td><td class="num ${m.avg_r >= 0 ? "pos" : "neg"}">${sgn(m.avg_r)}</td><td class="num">${m.cost_vs_plan == null ? "–" : sgn(m.cost_vs_plan)}</td></tr>`).join("")}</tbody></table>` : "");
+  $("mList").innerHTML = d.trades.length ? d.trades.map(tradeCard).join("") : `<p class="muted">Noch keine Trades.</p>`;
+  bindCards();
+}
+function tradeCard(t) {
+  const p = t.plan, imgs = (t.images || []).map((im) => `<a href="/shots/${esc(im.name)}" target="_blank" rel="noopener"><img class="thumb" src="/shots/${esc(im.name)}" alt="Screenshot ${esc(im.when)}"></a>`).join("");
+  const row = (label, you, plan, fmt = f2) => `<tr><td>${label}</td><td class="num">${you == null ? "–" : fmt(you)}</td><td class="num muted">${plan == null ? "–" : fmt(plan)}</td></tr>`;
+  const res = t.status === "closed" ? `<div class="res ${t.r >= 0 ? "pos" : "neg"}">${sgn(t.r)} R · ${sgn(t.pnl)} $ <span class="muted">${esc(REASON[t.exit_reason] || "")} ${esc(t.exit_time || "")}${t.auto_settled ? " · geschätzt aus Kursdaten" : ""}</span></div>` : `<div class="res"><span class="chip c-run">OFFEN</span></div>`;
+  const devs = (t.auto_mistakes || []).map((m) => `<li><b>${esc(mine.doc.mistakes[m.key] || m.key)}</b> <span class="muted">${esc(m.evidence)}</span></li>`).join("");
+  const tags = (t.mistakes || []).filter((k) => !(t.auto_mistakes || []).some((m) => m.key === k)).map((k) => `<li>${esc(mine.doc.mistakes[k] || k)}</li>`).join("");
+  const rv = t.review;
+  return `<article class="sec tcard" data-id="${esc(t.id)}">
+    <header><b>${esc(t.symbol)}</b> <span class="num muted">${esc(t.date)} ${esc(t.time)} ET</span> ${p ? `<span class="chip c-${kind(p.action)}">App: ${esc(p.action)}${p.grade ? " · " + p.grade : ""}</span>` : `<span class="chip c-watch">eigener Trade</span>`}
+      ${t.rating ? `<span class="chip ${t.rating === "good" ? "c-buy" : t.rating === "bad" ? "c-no" : "c-watch"}">${RATING[t.rating]}</span>` : ""}</header>
+    ${res}
+    <div class="tgrid"><table class="mini"><thead><tr><th></th><th>Du</th><th>Plan</th></tr></thead><tbody>
+      ${row("Kauf", t.entry, p && p.entry)}${row("Stück", t.shares, p && p.shares, (x) => x)}${row("Stop", t.stop, p && p.stop)}${row("Ziel", t.target, p && p.target)}
+      ${t.status === "closed" ? row("Ergebnis R", t.r, t.plan_result && t.plan_result.r, sgn) : ""}</tbody></table>
+      ${imgs ? `<div class="thumbs">${imgs}</div>` : ""}</div>
+    ${t.note ? `<p class="note">Notiz: ${esc(t.note)}</p>` : ""}${t.note_after ? `<p class="note">Danach: ${esc(t.note_after)}</p>` : ""}
+    ${t.status === "closed" ? (devs || tags ? `<p class="note" style="margin-bottom:2px">Abweichungen vom Plan:</p><ul class="devs">${devs}${tags}</ul>` : t.followed_plan ? `<p class="note pos">Plan sauber befolgt.</p>` : "") : ""}
+    ${rv ? `<div class="review"><b>Claude: ${({ good: "guter Trade", mixed: "gemischt", bad: "schlechter Trade" })[rv.verdict]}</b><p>${esc(rv.lesson)}</p><p><b>Beibehalten:</b> ${esc(rv.keep_doing)}<br><b>Nächstes Mal:</b> ${esc(rv.change_next_time)}</p></div>` : ""}
+    <div class="acts">
+      ${t.status === "open" ? `<button class="btn" data-act="closeform">Trade abschließen</button><button class="btn ghost" data-act="auto">Automatisch aus Kursdaten</button>` : `
+        <button class="btn ghost" data-act="rate" data-v="good">War gut</button><button class="btn ghost" data-act="rate" data-v="bad">War schlecht</button>
+        <button class="btn ghost" data-act="review" ${mine.doc.claude ? "" : 'disabled title="Braucht pip install anthropic und einen Anthropic-Schlüssel"'}>Von Claude auswerten</button>`}
+      <label class="btn ghost filebtn">Bild hinzufügen<input type="file" accept="image/*" capture="environment" data-act="img" hidden></label>
+      <button class="btn ghost danger" data-act="del">Löschen</button>
+    </div>
+    <form class="closeform" hidden>
+      <div class="form">
+        <label>Verkaufskurs<input name="exit" inputmode="decimal" required></label>
+        <label>Uhrzeit (ET)<input name="exit_time" value="${nowET()}"></label>
+        <label>Wie raus?<select name="exit_reason"><option value="target">Ziel erreicht</option><option value="stop">Stop ausgelöst</option><option value="manual" selected>Selbst verkauft</option><option value="flat">Zur Glattstellzeit</option></select></label>
+      </div>
+      <fieldset class="tags"><legend>War der Trade gut?</legend>
+        <label><input type="radio" name="rating" value="good"> War gut</label><label><input type="radio" name="rating" value="bad"> War schlecht</label><label><input type="radio" name="rating" value="neutral"> Weiß nicht</label></fieldset>
+      <fieldset class="tags"><legend>Was ist passiert? (optional, die App erkennt vieles selbst)</legend>
+        <label><input type="checkbox" name="stop_moved"> Stop verschoben</label>
+        ${["early_exit", "fomo", "revenge", "too_big"].map((k) => `<label><input type="checkbox" name="m" value="${k}"> ${esc(mine.doc.mistakes[k])}</label>`).join("")}</fieldset>
+      <label class="wide">Was lief gut, was schlecht?<textarea name="note_after" rows="2"></textarea></label>
+      <label class="btn ghost filebtn">Bild vom Ergebnis<input type="file" accept="image/*" capture="environment" name="img" hidden></label>
+      <button class="btn">Speichern</button> <span class="note" data-msg></span>
+    </form>
+  </article>`;
+}
+function bindCards() {
+  $("mList").querySelectorAll(".tcard").forEach((card) => {
+    const id = card.dataset.id, msg = (t) => { const m = card.querySelector("[data-msg]"); if (m) m.textContent = t; };
+    const post = async (path, body) => { try { await api(`/api/trades/${encodeURIComponent(id)}/${path}`, body || {}); await loadMine(); } catch (e) { alertBox(e.message); } };
+    card.querySelectorAll("[data-act]").forEach((el) => {
+      const act = el.dataset.act;
+      if (act === "img") { el.onchange = async () => { const f = el.files[0]; if (f) post("image", { image: await shrinkImage(f), when: "extra" }); }; return; }
+      el.onclick = async () => {
+        if (act === "closeform") card.querySelector(".closeform").hidden = false;
+        else if (act === "auto") post("close", { auto: true });
+        else if (act === "rate") post("rate", { rating: el.dataset.v });
+        else if (act === "review") { el.disabled = true; el.textContent = "Claude wertet aus…"; await post("review"); }
+        else if (act === "del") { if (el.dataset.sure) post("delete"); else { el.dataset.sure = "1"; el.textContent = "Wirklich löschen?"; } }
+      };
+    });
+    const form = card.querySelector(".closeform");
+    let img = null;
+    form.querySelector('input[name="img"]').onchange = async (e) => { const f = e.target.files[0]; if (f) { img = await shrinkImage(f); msg("Bild angehängt"); } };
+    form.onsubmit = async (e) => {
+      e.preventDefault();
+      const fd = new FormData(form);
+      const body = { exit: fd.get("exit"), exit_time: fd.get("exit_time"), exit_reason: fd.get("exit_reason"), rating: fd.get("rating"),
+        stop_moved: !!fd.get("stop_moved"), mistakes: fd.getAll("m"), note_after: fd.get("note_after") };
+      if (img) body.image = img;
+      try { await api(`/api/trades/${encodeURIComponent(id)}/close`, body); await loadMine(); } catch (err) { msg(err.message); }
+    };
+  });
+}
+$("newTradeBtn").onclick = () => openTradeDialog({});
+
 /* ------------------------------------------------ tabs, clock, refresh */
 function show(which) {
-  $("view-desk").hidden = which !== "desk"; $("view-learn").hidden = which !== "learn";
-  $("tab-desk").setAttribute("aria-selected", which === "desk"); $("tab-learn").setAttribute("aria-selected", which === "learn");
+  for (const v of ["desk", "mine", "learn"]) { $("view-" + v).hidden = which !== v; $("tab-" + v).setAttribute("aria-selected", which === v); }
   if (which === "desk") drawChart();
 }
 $("tab-desk").onclick = () => show("desk");
 $("tab-learn").onclick = () => { show("learn"); loadState(); };
+$("tab-mine").onclick = () => { show("mine"); loadMine(); };
 function tick() {
   const now = Date.now() / 1000;
   $("clock").textContent = "New York " + fmtET(now) + " · " + LOCAL_TZ.split("/").pop().replace("_", " ") + " " + fmtLocal(now);
@@ -771,6 +1022,7 @@ if (DEMO) {
   lastLearn = DEMO.learn;
 }
 loadState().catch(() => {});
+loadMine();
 loadScan();
 })();
 </script>
