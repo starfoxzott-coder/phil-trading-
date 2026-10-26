@@ -50,7 +50,7 @@ header.top { display: flex; flex-wrap: wrap; align-items: center; gap: 10px 18px
 
 .rail { display: flex; flex-direction: column; gap: 6px; min-width: 0 }
 .rail h2, .sec h2 { font-size: 11px; letter-spacing: .09em; text-transform: uppercase; color: var(--muted); margin: 0 0 4px; font-weight: 700 }
-.tick { display: grid; grid-template-columns: 54px 1fr auto; align-items: center; gap: 8px; text-align: left; width: 100%;
+.tick { display: grid; grid-template-columns: 58px 1fr auto; align-items: center; gap: 8px; text-align: left; width: 100%;
   padding: 8px 10px; border: 1px solid var(--line); background: var(--panel); color: var(--fg); border-radius: 6px }
 .tick[aria-current="true"] { border-color: var(--accent); box-shadow: inset 3px 0 0 var(--accent) }
 .tick b { font-weight: 700 }
@@ -167,6 +167,30 @@ select { font: inherit; padding: 6px 9px; border: 1px solid var(--line); border-
 .exbody { flex: 1; min-height: 0; background: var(--panel); border: 1px solid var(--line); border-radius: 8px; position: relative }
 .exbody canvas { width: 100%; height: 100%; display: block; touch-action: none; cursor: crosshair }
 #exInfo { font: 12px var(--f-num); color: var(--muted); min-height: 2.6em }
+.subtabs { display: flex; gap: 2px; border-bottom: 1px solid var(--line); overflow-x: auto; scrollbar-width: none }
+.subtabs button { background: none; border: 0; border-bottom: 2px solid transparent; color: var(--muted); font-weight: 700; font-size: 13.5px; padding: 8px 12px; white-space: nowrap }
+.subtabs button[aria-selected="true"] { color: var(--fg); border-bottom-color: var(--accent) }
+.subtabs + .panel { margin-top: 0 }
+.panel > .sec:first-child, .panel > .grid2:first-child { border-top-left-radius: 0 }
+.lvsub { grid-column: 1 / -1; background: var(--panel); padding: 7px 12px; font-size: 12.5px; color: var(--muted) }
+.lvsub b { color: var(--fg); font-family: var(--f-num); font-weight: 600 }
+.ghead { font-size: 10.5px; letter-spacing: .08em; text-transform: uppercase; color: var(--muted); font-weight: 700; margin: 8px 0 2px }
+.ghead:first-child { margin-top: 0 }
+.tick small { color: var(--muted); font-family: var(--f-num); font-size: 11.5px; white-space: nowrap; overflow: hidden; text-overflow: ellipsis; min-width: 0 }
+/* phones: the watchlist is a strip you swipe, so the decision comes first */
+@media (max-width: 860px) {
+  #ticks { display: flex; gap: 6px; overflow-x: auto; padding-bottom: 4px; scrollbar-width: none }
+  #ticks .tick { flex: 0 0 auto; width: auto; grid-template-columns: auto auto; gap: 2px 10px }
+  #ticks .tick small { grid-column: 1; grid-row: 2 }
+  #ticks .tick .chip { grid-column: 2; grid-row: 1 / span 2; align-self: center }
+  #ticks .ghead { display: none }
+  .rail .addrow, #ruleNow { display: none }
+  .fab { padding: 10px 14px; font-size: 13px }
+}
+.gear { font-size: 16px; padding: 5px 10px }
+.sh { font-size: 11px; letter-spacing: .09em; text-transform: uppercase; color: var(--muted); margin: 10px 0 8px; font-weight: 700 }
+.tabs { overflow-x: auto; scrollbar-width: none }
+.tabs button { white-space: nowrap }
 .pre { white-space: pre-wrap; font: 11.5px/1.45 var(--f-num); background: var(--bg); border: 1px solid var(--line); border-radius: 6px; padding: 10px; overflow-x: auto; max-height: 420px; overflow-y: auto; margin: 8px 0 0 }
 .chip-btn[aria-pressed="true"] { background: var(--accent); color: #fff; border-color: var(--accent) }
 #toasts { position: fixed; z-index: 40; top: max(12px, env(safe-area-inset-top, 0px)); left: 50%; transform: translateX(-50%); display: flex; flex-direction: column; gap: 6px; width: min(460px, calc(100% - 32px)) }
@@ -235,13 +259,13 @@ td { padding: 6px 8px; border-bottom: 1px solid var(--line); vertical-align: top
   <div class="tf" role="group" aria-label="Kerzenlänge" id="tf"><span>Kerzen</span>
     <button data-m="1" aria-pressed="false">1</button><button data-m="2" aria-pressed="false">2</button><button data-m="5" aria-pressed="true">5</button><button data-m="15" aria-pressed="false">15</button><button data-m="30" aria-pressed="false">30</button><span>Min</span></div>
   <span class="spacer"></span>
+  <button class="btn ghost gear" id="setBtn" title="Einstellungen" aria-label="Einstellungen">⚙</button>
   <nav class="tabs" role="tablist">
     <button role="tab" id="tab-desk" aria-selected="true">Trading</button>
     <button role="tab" id="tab-market" aria-selected="false">Markt</button>
     <button role="tab" id="tab-mine" aria-selected="false">Meine Trades</button>
     <button role="tab" id="tab-learn" aria-selected="false">Lernen</button>
   </nav>
-  <button class="btn" id="learnBtn" title="Abrechnen, bewerten, Regel anpassen">Jetzt lernen</button>
 </header>
 <div id="demoNote" class="banner" hidden></div>
 
@@ -256,66 +280,88 @@ td { padding: 6px 8px; border-bottom: 1px solid var(--line); vertical-align: top
   <div class="main">
     <div id="call" class="call"><div class="act">Lädt…</div><div></div></div>
     <div class="levels" id="levels"></div>
-    <div class="plan2">
-      <div class="sec"><h2>Wann ist es wirklich sinnvoll?</h2><div id="checkBox"></div></div>
-      <div class="sec"><h2>So setzt du die Order</h2><div id="orderBox"></div></div>
-    </div>
     <div class="chartbox">
-      <button class="btn ghost exopen" id="exOpenBtn" title="Großes Chart mit Historie, Zoom und eigener Kerzenlänge">⤢ Interaktives Chart</button>
+      <button class="btn ghost exopen" id="exOpenBtn" title="Großes Chart mit Historie, Zoom und eigener Kerzenlänge">⤢ Großes Chart</button>
       <canvas id="chart" aria-label="Kurschart mit Positionsbox"></canvas>
       <div class="tip" id="tip" hidden></div>
       <div class="legend">
-        <span><i style="background:var(--win-soft);border:1px solid var(--win)"></i>Gewinnzone bis Ziel</span>
-        <span><i style="background:var(--loss-soft);border:1px solid var(--loss)"></i>Verlustzone bis Stop</span>
+        <span><i style="background:var(--win-soft);border:1px solid var(--win)"></i>bis Ziel</span>
+        <span><i style="background:var(--loss-soft);border:1px solid var(--loss)"></i>bis Stop</span>
         <span><i style="background:var(--range)"></i>Eröffnungsspanne</span>
-        <span><i style="background:var(--fan)"></i>Time Machine 5–95 %</span>
-        <span>Boxlänge = Haltedauer bis „flat by“</span>
         <span><i style="background:var(--wait);height:2px;vertical-align:3px"></i>VWAP</span>
         <span><i style="background:var(--muted);height:2px;vertical-align:3px"></i>EMA 20</span>
         <span id="liveTag" class="live">offline</span>
-        <span id="tzNote"></span>
+        <span id="tzNote" hidden></span>
       </div>
     </div>
-    <div class="grid2">
-      <div class="sec" id="tmSec"><h2>Time Machine</h2><div id="tm"></div></div>
-      <div class="sec"><h2>Größe &amp; Risiko-Check</h2><div id="sizeBox"></div></div>
-      <div class="sec"><h2>Diese Regel auf diesem Ticker, letzte 60 Tage</h2><div id="hist"></div></div>
-      <div class="sec"><h2>Markt-Kontext · Liquid &amp; Indikatoren</h2><div id="ctxBox"></div></div>
-      <div class="sec" style="grid-column:1/-1"><h2>Was die Skills zu diesem Signal sagen</h2><div id="skillBox"></div>
-        <button class="btn ghost" id="skCheckBtn" style="margin-top:10px">Mit allen Skills prüfen</button></div>
-      <div class="sec" style="grid-column:1/-1"><h2>Warum genau dieser Stop und dieses Ziel?</h2><div class="scroll" id="heatBox"></div></div>
-      <div class="sec news"><h2>News</h2><div id="news"></div></div>
-    </div>
+    <nav class="subtabs" role="tablist" id="dtabs" aria-label="Details zum Signal">
+      <button role="tab" data-p="why" aria-selected="true">Warum?</button>
+      <button role="tab" data-p="order" aria-selected="false">Order</button>
+      <button role="tab" data-p="sltp" aria-selected="false">Stop &amp; Ziel</button>
+      <button role="tab" data-p="skills" aria-selected="false">Skills</button>
+      <button role="tab" data-p="data" aria-selected="false">Daten</button>
+      <button role="tab" data-p="news" aria-selected="false">News</button>
+    </nav>
+    <div class="panel" data-p="why"><div class="sec"><h2>Wann ist es wirklich sinnvoll?</h2><div id="checkBox"></div></div></div>
+    <div class="panel" data-p="order" hidden><div class="grid2">
+      <div class="sec"><h2>So setzt du die Order</h2><div id="orderBox"></div></div>
+      <div class="sec"><h2>Größe &amp; Risiko-Check</h2><div id="sizeBox"></div></div></div></div>
+    <div class="panel" data-p="sltp" hidden>
+      <div class="sec"><h2>Warum genau dieser Stop und dieses Ziel?</h2><div class="scroll" id="heatBox"></div></div>
+      <div class="grid2" style="margin-top:16px">
+        <div class="sec" id="tmSec"><h2>Time Machine</h2><div id="tm"></div></div>
+        <div class="sec"><h2>Diese Regel auf diesem Ticker, letzte 60 Tage</h2><div id="hist"></div></div></div></div>
+    <div class="panel" data-p="skills" hidden><div class="sec"><h2>Was die Skills zu diesem Signal sagen</h2><div id="skillBox"></div>
+      <button class="btn ghost" id="skCheckBtn" style="margin-top:10px">Mit allen Skills prüfen</button></div></div>
+    <div class="panel" data-p="data" hidden><div class="sec"><h2>Markt-Kontext · Liquid &amp; Indikatoren</h2><div id="ctxBox"></div></div></div>
+    <div class="panel" data-p="news" hidden><div class="sec news"><h2>News</h2><div id="news"></div></div></div>
   </div>
 </section>
 
 <section id="view-market" hidden>
-  <div class="mkt">
-    <div class="sec wide"><h2>Ganzer Markt · trader-scanner</h2>
-      <div class="row"><button class="btn" id="skScanBtn">Alle US-Aktien scannen (≈ 3 Min)</button><span id="skScanState"></span></div>
-      <div class="row" id="skFilter" style="margin-top:10px"></div>
-      <div class="scroll" id="skHits" style="margin-top:8px"></div></div>
-    <div class="sec wide"><h2>Ausbrüche heute · trader-scanner orb</h2>
-      <div class="row"><button class="btn ghost" id="skOrbBtn">Scan-Treffer + Watchlist auf Ausbrüche prüfen</button><span id="skOrbState"></span></div>
-      <div class="scroll" id="skOrb" style="margin-top:8px"></div></div>
-    <div class="sec"><h2>Alarme · trader-alerts</h2>
-      <p class="note" id="skClock" style="margin:0 0 8px"></p>
-      <div class="row"><button class="btn ghost" id="skNotify">Benachrichtigungen erlauben</button><button class="btn ghost" id="skCheckAlerts">Jetzt prüfen</button></div>
-      <div id="skRings" style="margin-top:10px"></div>
-      <p class="note">Läuft die App, prüft sie Alarme jede Minute während der Börsenzeit. Alarme entstehen automatisch, wenn du einen Trade einträgst, oder über „Alarme setzen“ beim Plan.</p></div>
-    <div class="sec"><h2>Kongress-Trades · trader-pelosi</h2>
-      <div class="row"><button class="btn ghost" id="skCongBtn">Meldungen der letzten 30 Tage lesen</button><span id="skCongState"></span></div>
-      <div class="scroll" id="skCong" style="margin-top:8px"></div></div>
-    <div class="sec wide"><h2>Skills</h2><div id="skList"></div>
-      <div class="form" style="margin-top:12px">
-        <label for="skUa">Name und E-Mail für die SEC (für SEC-Meldungen und Quartalszahlen)<input id="skUa" placeholder="Vorname Nachname du@beispiel.de"></label>
-        <label for="skDir">Ordner mit den Skills (leer = automatisch suchen)<input id="skDir" placeholder="~/.claude/skills"></label>
-      </div>
-      <div style="margin-top:10px"><button class="btn" id="skSave">Speichern</button></div>
-      <p class="note">Die SEC verlangt bei jedem Abruf einen Namen mit E-Mail; er geht nur an sec.gov.</p></div>
-  </div>
+  <nav class="subtabs" role="tablist" id="mtabs" aria-label="Markt" style="margin-top:16px">
+    <button role="tab" data-p="scan" aria-selected="true">Scanner</button>
+    <button role="tab" data-p="orb" aria-selected="false">Ausbrüche heute</button>
+    <button role="tab" data-p="alerts" aria-selected="false">Alarme</button>
+    <button role="tab" data-p="cong" aria-selected="false">Kongress</button>
+    <button role="tab" data-p="skills" aria-selected="false">Skills</button>
+  </nav>
+  <div class="panel" data-p="scan"><div class="sec"><h2>Ganzer Markt · trader-scanner</h2>
+    <div class="row"><button class="btn" id="skScanBtn">Alle US-Aktien scannen (≈ 3 Min)</button><span id="skScanState"></span></div>
+    <div class="row" id="skFilter" style="margin-top:10px"></div>
+    <div class="scroll" id="skHits" style="margin-top:8px"></div></div></div>
+  <div class="panel" data-p="orb" hidden><div class="sec"><h2>Ausbrüche heute · trader-scanner orb</h2>
+    <div class="row"><button class="btn" id="skOrbBtn">Scan-Treffer + Watchlist auf Ausbrüche prüfen</button><span id="skOrbState"></span></div>
+    <div class="scroll" id="skOrb" style="margin-top:8px"></div></div></div>
+  <div class="panel" data-p="alerts" hidden><div class="sec"><h2>Alarme · trader-alerts</h2>
+    <p class="note" id="skClock" style="margin:0 0 8px"></p>
+    <div class="row"><button class="btn ghost" id="skNotify">Benachrichtigungen erlauben</button><button class="btn ghost" id="skCheckAlerts">Jetzt prüfen</button></div>
+    <div id="skRings" style="margin-top:10px"></div>
+    <p class="note">Läuft die App, prüft sie Alarme jede Minute während der Börsenzeit. Alarme entstehen automatisch, wenn du einen Trade einträgst, oder über „Alarme setzen“ unter Trading → Order.</p></div></div>
+  <div class="panel" data-p="cong" hidden><div class="sec"><h2>Kongress-Trades · trader-pelosi</h2>
+    <div class="row"><button class="btn" id="skCongBtn">Meldungen der letzten 30 Tage lesen</button><span id="skCongState"></span></div>
+    <div class="scroll" id="skCong" style="margin-top:8px"></div></div></div>
+  <div class="panel" data-p="skills" hidden><div class="sec"><h2>Gefundene Skills</h2><div id="skList"></div>
+    <p class="note">Ordner und SEC-Angaben stellst du unter ⚙ Einstellungen ein.</p></div></div>
 </section>
 <div id="toasts" aria-live="polite"></div>
+
+<div class="overlay" id="setWin" hidden role="dialog" aria-modal="true" aria-labelledby="setTitle">
+  <div class="dlg" style="width:min(720px,100%)">
+    <div class="row" style="justify-content:space-between"><h3 id="setTitle">Einstellungen</h3><button class="btn ghost" id="setClose">Schließen</button></div>
+    <h2 class="sh">Deine Limits und die Watchlist</h2>
+    <form class="form" id="setForm"></form>
+    <div style="margin-top:10px"><button class="btn" id="saveSet">Limits speichern</button></div>
+    <p class="note">Die Lernschleife ändert nur die Regel, nie deine Limits.</p>
+    <h2 class="sh" style="margin-top:18px">Skills</h2>
+    <div class="form">
+      <label for="skUa">Name und E-Mail für die SEC (für SEC-Meldungen und Quartalszahlen)<input id="skUa" placeholder="Vorname Nachname du@beispiel.de"></label>
+      <label for="skDir">Ordner mit den Skills (leer = automatisch suchen)<input id="skDir" placeholder="~/.claude/skills"></label>
+    </div>
+    <div style="margin-top:10px"><button class="btn" id="skSave">Speichern</button></div>
+    <p class="note">Die SEC verlangt bei jedem Abruf einen Namen mit E-Mail; er geht nur an sec.gov.</p>
+  </div>
+</div>
 
 <section id="view-mine" hidden>
   <div class="mine-top">
@@ -384,6 +430,8 @@ td { padding: 6px 8px; border-bottom: 1px solid var(--line); vertical-align: top
 </aside>
 
 <section id="view-learn" hidden>
+  <div class="row" style="padding-top:16px"><button class="btn" id="learnBtn" title="Abrechnen, bewerten, Regel anpassen">Jetzt lernen</button>
+    <span class="note" style="margin:0">Rechnet Signale ab, bewertet sie und passt die Regel an. Läuft sonst jeden Abend von selbst.</span></div>
   <div class="grid2" style="padding-top:16px">
     <div class="sec"><h2>Aktive Regel</h2><div id="lRule"></div></div>
     <div class="sec"><h2>Live-Bilanz der Signale</h2><div id="lScore"></div></div>
@@ -391,11 +439,6 @@ td { padding: 6px 8px; border-bottom: 1px solid var(--line); vertical-align: top
   <div class="sec" style="margin-top:16px"><h2>Gelernte Lektionen (jede Regeländerung mit Grund)</h2><div id="lHist"></div></div>
   <div class="sec" style="margin-top:16px"><h2>Signal-Journal</h2><div class="scroll" id="lJournal"></div></div>
   <div class="sec" style="margin-top:16px"><h2>Letzter Vergleich der Regelvarianten</h2><div class="scroll" id="lRank"><p class="muted">Erscheint nach „Jetzt lernen“.</p></div></div>
-  <div class="sec" style="margin-top:16px"><h2>Deine Limits</h2>
-    <form class="form" id="setForm"></form>
-    <p class="note">Gespeichert in app/data/strategy.json. Die Lernschleife ändert nur die Regel, nie deine Limits.</p>
-    <button class="btn" id="saveSet" style="margin-top:10px">Limits speichern</button>
-  </div>
 </section>
 
 <script>
@@ -444,11 +487,16 @@ const TF_INFO = {
 const KIND = { "KAUFEN": "buy", "LÄUFT": "run", "WARTEN": "wait", "BEOBACHTEN": "watch", "VORBEI": "done", "KEIN TRADE": "no", "FEHLER": "err" };
 const kind = (a) => KIND[a] || "no";
 function chipClass(a) { return "c-" + kind(a); }
+const GROUPS = [["Handeln", ["KAUFEN", "LÄUFT", "WARTEN"]], ["Beobachten", ["BEOBACHTEN"]], ["Heute nicht", ["KEIN TRADE", "VORBEI", "FEHLER"]]];
 function renderTicks() {
-  $("ticks").innerHTML = scanRows.map((r) => `
-    <button class="tick" data-s="${esc(r.symbol)}" aria-current="${r.symbol === current}">
-      <b>${esc(r.symbol)}</b><span class="why">${esc(r.reason || "")}</span>
-      <span class="chip ${chipClass(r.action)}">${esc(r.action)}</span></button>`).join("");
+  const row = (r) => `
+    <button class="tick" data-s="${esc(r.symbol)}" aria-current="${r.symbol === current}" title="${esc(r.reason || "")}">
+      <b>${esc(r.symbol)}</b><small>${r.price != null ? f2(r.price) : ""}${r.grade ? " · " + esc(r.grade) : ""}</small>
+      <span class="chip ${chipClass(r.action)}">${esc(r.action)}</span></button>`;
+  $("ticks").innerHTML = GROUPS.map(([name, acts]) => {
+    const rows = scanRows.filter((x) => acts.includes(x.action));
+    return rows.length ? `<p class="ghead">${name} · ${rows.length}</p>` + rows.map(row).join("") : "";
+  }).join("") || `<p class="muted">Lädt…</p>`;
   $("ticks").querySelectorAll(".tick").forEach((b) => b.onclick = () => select(b.dataset.s));
 }
 async function loadScan() {
@@ -481,9 +529,10 @@ function renderAnalysis() {
     <div><div class="act">${esc(d.action)}</div><div class="sym">${esc(a.symbol)} <span class="num muted">${f2(a.price)}</span>
       ${a.quality ? `<span class="grade ${a.quality.grade}" title="Qualität" style="width:24px;height:24px;font-size:14px;vertical-align:-6px;margin-left:6px">${a.quality.grade}</span>` : ""}</div></div>
     <ul>${d.reasons.map((r) => `<li>${esc(r)}</li>`).join("") || "<li>Keine Auffälligkeiten</li>"}</ul>
-    ${p && a.market_open ? `<div></div><div style="display:flex;flex-wrap:wrap;gap:8px;align-items:center"><button class="btn ${d.action === "KAUFEN" ? "" : "ghost"}" id="didBtn">Ich habe diesen Trade gemacht</button>
-      ${(a.my_trades || []).length ? `<span class="note" style="margin:0">${a.my_trades.length} Trade(s) von dir heute eingetragen</span>` : ""}</div>` : ""}
-    <div></div><div><button class="btn ghost" id="askBtn">Frag die KI zu diesem Signal</button></div>`;
+    <div></div><div class="row">
+      ${p && a.market_open ? `<button class="btn ${d.action === "KAUFEN" ? "" : "ghost"}" id="didBtn">Ich habe diesen Trade gemacht</button>` : ""}
+      <button class="btn ghost" id="askBtn">Frag die KI</button>
+      ${(a.my_trades || []).length ? `<span class="note" style="margin:0">${a.my_trades.length} Trade(s) von dir heute</span>` : ""}</div>`;
   $("askBtn").onclick = () => openChat(null);
   if ($("didBtn")) $("didBtn").onclick = () => openTradeDialog({ symbol: a.symbol, entry: a.order ? a.order.buy_limit : p.entry, shares: a.size.shares, stop: p.stop, target: p.target, fromPlan: true });
 
@@ -491,13 +540,10 @@ function renderAnalysis() {
     const hold = p.end_t - p.entry_t;
     $("levels").innerHTML = `
       <div class="lv"><span>Einstieg</span><b>${f2(p.entry)}</b><em>${esc(when)}</em></div>
-      <div class="lv s"><span>Stop-Loss</span><b>${f2(p.stop)}</b><em>${sgn((p.stop - p.entry) / p.entry * 100)} % · ${esc(stopLabel(p.stop_kind))}</em></div>
-      <div class="lv t"><span>Take-Profit</span><b>${f2(p.target)}</b><em>${sgn((p.target - p.entry) / p.entry * 100)} % · ${p.target_r}R</em></div>
+      <div class="lv s"><span>Stop-Loss</span><b>${f2(p.stop)}</b><em>${sgn((p.stop - p.entry) / p.entry * 100)} % · −$${z.loss_at_stop.toFixed(2)}</em></div>
+      <div class="lv t"><span>Take-Profit</span><b>${f2(p.target)}</b><em>${sgn((p.target - p.entry) / p.entry * 100)} % · +$${z.gain_at_target.toFixed(2)}</em></div>
       <div class="lv"><span>Erwartung</span><b class="${s && s.ev_net >= 0 ? "pos" : "neg"}">${s ? sgn(s.ev_net) + "R" : "–"}</b><em>${s ? sgn(s.ev_usd) + " $ nach Kosten" : ""}</em></div>
-      <div class="lv"><span>Stück</span><b>${z.shares}</b><em>$${z.cost.toFixed(0)}</em></div>
-      <div class="lv s"><span>Verlust am Stop</span><b>−$${z.loss_at_stop.toFixed(2)}</b><em>1R</em></div>
-      <div class="lv t"><span>Gewinn am Ziel</span><b>+$${z.gain_at_target.toFixed(2)}</b><em>${p.target_r}R</em></div>
-      <div class="lv"><span>Haltedauer max.</span><b>${dur(hold)}</b><em>bis ${fmtET(p.end_t)} ET</em></div>`;
+      <div class="lvsub"><b>${z.shares}</b> Stück (≈ $${z.cost.toFixed(0)}) · Stop: ${esc(stopLabel(p.stop_kind))} · Ziel ${p.target_r}R · max. <b>${dur(hold)}</b> bis ${fmtET(p.end_t)} ET (${fmtLocal(p.end_t)} deine Zeit)</div>`;
   } else {
     $("levels").innerHTML = `<div class="lv"><span>Kein Plan</span><b>–</b><em>${a.opening_range ? "Spanne " + f2(a.opening_range.low) + "–" + f2(a.opening_range.high) : "Spanne bildet sich"}</em></div>`;
   }
@@ -1675,7 +1721,7 @@ function renderSkills() {
   $("skList").innerHTML = `<p class="note" style="margin:0 0 8px">${found} von ${d.skills.length} Skills gefunden${off ? " (Stand des Schnappschusses)" : ""}.</p>
     <ul class="checks">${d.skills.map((s) => `<li><span class="ic ${s.found ? "y" : "n"}">${s.found ? "✓" : "✗"}</span><span><b>${esc(s.label)}</b> <span class="muted">${esc(s.skill)}</span></span><small>${s.found ? "" : "fehlt"}</small></li>`).join("")}</ul>
     ${found < d.skills.length ? `<p class="note">Fehlende Skills: Ordner mit den trader-*-Skills unten eintragen (z. B. aus Claude Code: ~/.claude/skills) oder PHIL_SKILLS_DIR setzen.</p>` : ""}`;
-  $("skUa").value = d.sec_user_agent || ""; $("skDir").value = d.skills_dir || "";
+  if ($("setWin").hidden) { $("skUa").value = d.sec_user_agent || ""; $("skDir").value = d.skills_dir || ""; }
   // whole market
   const js = d.jobs.scan || {}, res = js.result;
   $("skScanState").innerHTML = jobLine(js, res ? `${res.counts.scanned.toLocaleString("de-DE")} liquide Aktien von ${res.universe.toLocaleString("de-DE")} geprüft, ${res.hits.length} Treffer (Tageskerzen, Stand ${esc(String(res.as_of).replace(" close", " Schlusskurs"))})` : "");
@@ -1695,7 +1741,7 @@ function renderSkills() {
       if (off) return;
       await api("/api/settings", { watchlist: [b.dataset.add, ...d.watchlist] }); await loadSkills(); loadScan();
     });
-  } else $("skFilter").innerHTML = $("skHits").innerHTML = js.state === "running" ? "" : `<p class="muted">Noch kein Scan. Läuft die App, scannt sie jeden Börsentag um 9:00 New York (15:00 deutsche Zeit) von selbst.</p>`;
+  } else $("skFilter").innerHTML = "", $("skHits").innerHTML = js.state === "running" ? "" : `<p class="muted">Noch kein Scan. Läuft die App, scannt sie jeden Börsentag um 9:00 New York (15:00 deutsche Zeit) von selbst.</p>`;
   // breakouts today
   const jo = d.jobs.orb || {}, ro = jo.result;
   $("skOrbState").innerHTML = jobLine(jo, ro ? `${ro.counts.scanned} geprüft, ${ro.hits.length} Ausbrüche` : "");
@@ -1710,7 +1756,7 @@ function renderSkills() {
   $("skCongState").innerHTML = jobLine(jc, rc ? `${rc.filings} Meldungen seit ${esc(rc.since)}, ${rc.read} gelesen` : "");
   $("skCong").innerHTML = rc ? (rc.rows.filter((r) => r.ticker).length ? `<table><thead><tr><th>Ticker</th><th>Wer</th><th>Art</th><th>Betrag</th><th>Handel</th><th>Gemeldet</th></tr></thead><tbody>${rc.rows.filter((r) => r.ticker).sort((a, b) => (b.watched - a.watched) || (b.date > a.date ? 1 : -1)).slice(0, 80).map((r) => `<tr${r.watched ? ' style="background:var(--wait-soft)"' : ""}><td><b>${esc(r.ticker)}</b>${r.watched ? " ★" : ""}</td><td>${esc(r.member)}${r.owner_name && r.owner_name !== "self" ? ` <span class="muted">(${esc(r.owner_name)})</span>` : ""}</td><td>${r.type === "P" ? '<span class="pos">Kauf</span>' : r.type === "S" ? '<span class="neg">Verkauf</span>' : esc(r.type_name || r.type)}</td><td class="num">${esc(r.amount)}</td><td class="num">${esc(r.date)}</td><td class="num"><a href="${esc(r.url)}" target="_blank" rel="noopener">${esc(r.filed)}</a></td></tr>`).join("")}</tbody></table><p class="note">★ = Aktie in deiner Watchlist. Meldungen kommen Tage bis Wochen nach dem Handel und nennen nur Betragsspannen.</p>` : `<p class="muted">Keine Aktien-Trades mit Ticker gefunden${rc.unread ? ` (${rc.unread} Meldungen nicht lesbar, dafür braucht der Skill das Programm pdftotext)` : ""}.</p>`) : "";
   // buttons
-  ["skScanBtn", "skOrbBtn", "skCongBtn", "skSave", "skCheckAlerts"].forEach((id) => { $(id).disabled = off; if (off) $(id).title = "Nur in der lokal gestarteten App"; });
+  ["skScanBtn", "skOrbBtn", "skCongBtn", "skCheckAlerts"].forEach((id) => { $(id).disabled = off; if (off) $(id).title = "Nur in der lokal gestarteten App"; });
   const running = ["scan", "orb", "congress"].some((k) => (d.jobs[k] || {}).state === "running");
   clearTimeout(sk.timer); if (running && !off) sk.timer = setTimeout(loadSkills, 4000);
 }
@@ -1777,6 +1823,33 @@ async function loadAnalyst() {
   catch (e) { $("anBox").innerHTML = `<p class="err">${esc(e.message)}</p>`; }
   b.disabled = false; b.textContent = "Quartalszahlen laden (trader-analyst)";
 }
+
+/* ------------------------------------------------ sub-tabs and settings */
+function setupSubtabs(navId) {
+  const nav = $(navId), scope = nav.parentElement;
+  const open = (key) => {
+    nav.querySelectorAll("button").forEach((b) => b.setAttribute("aria-selected", String(b.dataset.p === key)));
+    scope.querySelectorAll(":scope > .panel").forEach((p) => p.hidden = p.dataset.p !== key);
+    try { localStorage.setItem("phil.tab." + navId, key); } catch (e) {}
+  };
+  nav.querySelectorAll("button").forEach((b) => b.onclick = () => open(b.dataset.p));
+  let saved = null; try { saved = localStorage.getItem("phil.tab." + navId); } catch (e) {}
+  if (saved && nav.querySelector(`[data-p="${saved}"]`)) open(saved);
+  return open;
+}
+const openDetail = setupSubtabs("dtabs");
+setupSubtabs("mtabs");
+function openSettings() {
+  $("setWin").hidden = false;
+  if (stateDoc) renderSettings(stateDoc.strategy);
+  if (sk.doc) { $("skUa").value = sk.doc.sec_user_agent || ""; $("skDir").value = sk.doc.skills_dir || ""; }
+  ["saveSet", "skSave"].forEach((id) => { $(id).disabled = !!DEMO; if (DEMO) $(id).title = "Nur in der lokal gestarteten App"; });
+  $("setClose").focus();
+}
+$("setBtn").onclick = openSettings;
+$("setClose").onclick = () => { $("setWin").hidden = true; };
+document.addEventListener("keydown", (e) => { if (e.key === "Escape" && !$("setWin").hidden) $("setWin").hidden = true; });
+$("setWin").addEventListener("click", (e) => { if (e.target === $("setWin")) $("setWin").hidden = true; });  // click beside the window
 
 /* ------------------------------------------------ bar length */
 function markTF(m) { $("tf").querySelectorAll("button").forEach((b) => b.setAttribute("aria-pressed", String(+b.dataset.m === +m))); }

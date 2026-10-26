@@ -375,6 +375,12 @@ def start_job(name, fn):
         except Exception as e:  # surfaced to the page as the job's error
             j["error"], j["state"] = str(e)[:300], "failed"
         j["finished"] = time.time()
+        if j["state"] == "done":  # keep the last good result across restarts
+            os.makedirs(os.path.join(WORK, "jobs"), exist_ok=True)
+            tmp = os.path.join(WORK, "jobs", name + ".json.tmp")
+            with open(tmp, "w") as f:
+                json.dump(j, f)
+            os.replace(tmp, os.path.join(WORK, "jobs", name + ".json"))
 
     threading.Thread(target=go, daemon=True).start()
     return j
@@ -382,6 +388,12 @@ def start_job(name, fn):
 
 def job(name):
     j = JOBS.get(name)
+    if not j and re.match(r"^[a-z]+$", name or ""):
+        try:
+            with open(os.path.join(WORK, "jobs", name + ".json")) as f:
+                j = JOBS[name] = json.load(f)
+        except (OSError, ValueError):
+            j = None
     if not j:
         return {"state": "idle"}
     return dict(j, elapsed=round((j.get("finished") or time.time()) - j["started"]))

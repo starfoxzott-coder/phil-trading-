@@ -14,6 +14,17 @@ python3 app/server.py learn    # einen Lernzyklus von Hand
 Nur Python 3.9+ und die Standardbibliothek, keine Installation. Kursdaten: Yahoo Finance
 (kostenlos, inoffiziell, kann etwas verzögert sein).
 
+## Aufbau
+
+- **Trading**: links (am Handy oben zum Wischen) die Watchlist, gruppiert nach „Handeln“,
+  „Beobachten“ und „Heute nicht“. Rechts die Entscheidung, die vier wichtigsten Zahlen (Einstieg,
+  Stop, Ziel, Erwartung) und das Chart. Darunter die Details in Unter-Tabs: **Warum?**
+  (Checkliste), **Order** (die Schritte, Stückzahl, Alarme), **Stop & Ziel** (Heatmap, Time
+  Machine, Historie), **Skills**, **Daten** (Indikatoren, Liquid, Quartalszahlen), **News**.
+- **Markt**: Scanner, Ausbrüche heute, Alarme, Kongress, Skill-Status.
+- **Meine Trades** und **Lernen** (mit „Jetzt lernen“).
+- **⚙ Einstellungen**: Limits, Watchlist, SEC-Name/E-Mail, Skills-Ordner.
+
 ## Was du im Chart siehst
 
 - **Grüne Box**: Einstieg bis Take-Profit. **Rote Box**: Einstieg bis Stop-Loss.
