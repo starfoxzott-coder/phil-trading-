@@ -49,6 +49,34 @@ Nur Python 3.9+ und die Standardbibliothek, keine Installation. Kursdaten: Yahoo
 - **Quiver Quant** (Insider, Kongress, Dark Pool) ist noch nicht eingebaut: Dein Quiver-Konto
   ist verbunden, hat aber kein aktives Abo, daher liefert es keine Daten.
 
+## Wann ist es wirklich sinnvoll? Stop und Ziel pro Trade
+
+Für jedes Signal rechnet die App **30 Kombinationen** aus Stop und Ziel durch:
+
+- **Stops**: Mitte oder Tief der Eröffnungsspanne, 1 / 1,5 / 2 × ATR unter dem Einstieg, knapp unter VWAP
+- **Ziele**: 1R, 1,5R, 2R, 2,5R, 3R (R = Abstand Einstieg–Stop)
+
+Jede Kombination wird auf denselben 2.000 simulierten Verläufen des restlichen Tages **und** auf
+allen echten Ausbrüchen dieser Aktie der letzten 60 Tage durchgespielt. Davon gehen die
+Handelskosten ab (Standard 3 Basispunkte pro Seite). Es gewinnt die Kombination mit der höchsten
+Erwartung, aber nur mit einem Ziel, das in mindestens 15 % der Fälle zuerst erreicht wird. Die
+Heatmap „Warum genau dieser Stop und dieses Ziel?“ zeigt alle 30 Zellen.
+
+Gehandelt wird nur, wenn alle **Pflichtpunkte** stimmen:
+
+1. Eine 5-Minuten-Kerze hat über dem Spannenhoch geschlossen, vor höchstens 10 Minuten
+2. Erwartung nach Kosten mindestens +0,10R (die Lernschleife erhöht das, wenn die Vorhersagen zu
+   optimistisch waren)
+3. Deine Risikoregeln sind erfüllt, und der Ticker ist nicht gesperrt
+
+und die **Qualität** mindestens B ist. Die Qualität (A/B/C) zählt Zusatzkriterien: Setup auf
+dieser Aktie historisch positiv, Einstieg über VWAP, SPY über VWAP, mindestens 90 Minuten Zeit,
+RSI unter 75, Liquid-Profis nicht dagegen. Jedes Kriterium wird zu jedem Signal mitgeschrieben;
+im Tab „Lernen“ siehst du später, ob Trades mit erfülltem Kriterium wirklich besser waren.
+
+„So setzt du die Order“ gibt dir die vier Schritte: Kauf-Limit (Signalkurs + 0,1R, nicht
+nachjagen), Stop-Market-Verkauf, Take-Profit-Limit und spätestens 15:55 New York alles verkaufen.
+
 ## Was die App entscheidet
 
 | Anzeige | Bedeutung |
@@ -74,14 +102,14 @@ Lernzyklus (oder du drückst „Jetzt lernen“):
 
 1. **Abrechnen**: jedes Signal, das die App gut fand, bekommt sein echtes Ergebnis in R.
    Signale werden immer mitgeschrieben, auch wenn du sie nicht handelst.
-2. **Bewerten**: Trefferquote, Ø R, und ob die Wahrscheinlichkeiten der Time Machine
-   gestimmt haben (Brier-Score, wie `brier_delta` bei Phil).
+2. **Bewerten**: Trefferquote, Ø R, ob die vorhergesagte Erwartung gestimmt hat, Ergebnis nach
+   Qualität A/B/C und nach jedem Zusatzkriterium.
 3. **Regel anpassen**: 96 Varianten (Spanne 15/30 Min, Stop Mitte/Tief, Ziel 1–3R,
    Volumenfilter, Trendfilter VWAP/EMA) laufen über die letzten 60 Tage der Watchlist plus deine Live-Signale.
    Die Regel wechselt nur, wenn eine Variante über mindestens 30 Trades klar besser ist
    (untere Schranke: Ø R minus Standardfehler), damit eine Glückswoche nichts kippt.
-   Ticker, auf denen die Regel dauerhaft verliert, werden gesperrt. War die Simulation zu
-   optimistisch, verlangt die App mehr Vorteil.
+   Ticker, auf denen die Regel dauerhaft verliert, werden gesperrt. War die vorhergesagte
+   Erwartung zu optimistisch, verlangt die App mehr (Mindest-Erwartung steigt um 0,05R).
 4. **Retro**: jede Änderung landet mit Grund in `data/strategy-history.jsonl` und
    `data/retros.md` und im Tab „Lernen“.
 
@@ -97,7 +125,8 @@ Erst handeln, wenn das Journal über Wochen positiv ist, und dann klein.
 
 ## Dateien
 
-- `engine.py`: Daten, Einstieg, Stop/Ziel, Time Machine, Positionsgröße, Risiko-Check
+- `engine.py`: Daten, Einstieg, Checkliste, Positionsgröße, Risiko-Check
+- `optimize.py`: Stop und Ziel pro Signal (Simulation + echte Ausbrüche, nach Kosten)
 - `learn.py`: Abrechnen, Bewerten, Regel-Evolution, Retros
 - `liquid.py`: Hyperliquid-Live-Daten (Kerzen, Funding, Open Interest) und Liquid-Positionierung
 - `server.py`: Web-Server und Kommandozeile

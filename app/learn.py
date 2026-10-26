@@ -102,6 +102,9 @@ def record_signal(a):
            "edge_pp": (a.get("sim") or {}).get("edge_pp"),
            "shares": a["size"]["shares"], "loss_at_stop": a["size"]["loss_at_stop"],
            "liquid_read": (a.get("intel") or {}).get("read"),
+           "stop_kind": p.get("stop_kind"), "ev_r": (a.get("sim") or {}).get("ev_net"),
+           "grade": (a.get("quality") or {}).get("grade"),
+           "checks": {c["key"]: c["ok"] for c in a.get("checks", [])},
            "smart_long": (a.get("intel") or {}).get("smart_long"),
            "funding_pct_hr": (a.get("perp") or {}).get("funding_pct_hr"),
            "taken": False, "status": "open", "recorded_at": int(time.time())}
@@ -168,6 +171,18 @@ def score(rows=None):
     # does Liquid's positioning separate good signals from bad ones? (evidence, not yet a rule)
     s["by_liquid"] = {k: engine.summarize([r for r in done if r.get("liquid_read") == k])
                       for k in ("with", "neutral", "against")}
+    s["by_grade"] = {g: engine.summarize([r for r in done if r.get("grade") == g]) for g in "ABC"}
+    # each extra criterion: average R when it held vs when it did not
+    s["by_check"] = {}
+    for key in ("hist", "vwap", "market", "time", "rsi", "liquid"):
+        yes = [r for r in done if (r.get("checks") or {}).get(key) is True]
+        no = [r for r in done if (r.get("checks") or {}).get(key) is False]
+        if yes or no:
+            s["by_check"][key] = {"yes": engine.summarize(yes), "no": engine.summarize(no)}
+    ev = [r for r in done if r.get("ev_r") is not None]
+    if ev:
+        s["ev_calibration"] = {"n": len(ev), "predicted": round(sum(r["ev_r"] for r in ev) / len(ev), 3),
+                               "actual": round(sum(r["r"] for r in ev) / len(ev), 3)}
     return s
 
 
@@ -241,22 +256,23 @@ def evolve(strategy, watchlist, now_ts=None):
             del blocked[sym]
     strategy["blocked_symbols"] = blocked
 
-    # calibration: if the Time Machine was too optimistic, demand more edge
+    # calibration: if the predicted expectation was too optimistic, demand more of it
     sc = score(live)
-    cal = sc.get("calibration")
+    cal = sc.get("ev_calibration")
     if cal and cal["n"] >= CALIB_MIN:
-        gap = (cal["predicted"] - cal["actual"]) * 100
-        old = strategy["min_edge_pp"]
+        gap = cal["predicted"] - cal["actual"]
+        old = strategy.get("min_ev_r", 0.10)
         new = old
-        if gap > 10:
-            new = min(20.0, old + 2.0)
-        elif gap < -10:
-            new = max(0.0, old - 2.0)
+        if gap > 0.15:
+            new = min(0.5, old + 0.05)
+        elif gap < -0.15:
+            new = max(0.0, old - 0.05)
+        new = round(new, 2)
         if new != old:
-            strategy["min_edge_pp"] = new
-            changes.append({"field": "min_edge_pp", "old": old, "new": new,
-                            "why": "Simulation sagte %.0f%% Ziel-zuerst, real waren es %.0f%% (n=%d)" % (
-                                cal["predicted"] * 100, cal["actual"] * 100, cal["n"])})
+            strategy["min_ev_r"] = new
+            changes.append({"field": "min_ev_r", "old": old, "new": new,
+                            "why": "Vorhergesagt Ø %+.2fR, real Ø %+.2fR über %d Signale" % (
+                                cal["predicted"], cal["actual"], cal["n"])})
 
     ranking = sorted(({"params": t[0], "label": describe(t[0]), **t[1]} for t in ok),
                      key=lambda x: -x["lcb"])[:8]

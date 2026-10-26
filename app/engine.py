@@ -24,7 +24,6 @@ Data: Yahoo's free chart JSON (unofficial, can lag, bars not single trades).
 import datetime
 import json
 import math
-import random
 import threading
 import time
 import urllib.error
@@ -343,63 +342,6 @@ def summarize(trades):
 
 # ---------------------------------------------------------------- time machine
 
-def time_machine(sess, today, plan, start_slot, flat_min, replays=2000, seed=19, window=3):
-    """trader-timemachine: replay the rest of today from past bars (ratio bootstrap)."""
-    full = [day for d, day in sess.items() if d != today and len(day) == FULL_BARS]
-    if len(full) < 10:
-        return None
-    pool = [[] for _ in range(FULL_BARS)]
-    for day in full:
-        for j in range(1, FULL_BARS):
-            pc = day[j - 1]["c"]
-            b = day[j]
-            pool[j].append((b["o"] / pc, b["h"] / pc, b["l"] / pc, b["c"] / pc))
-    end_slot = min(FULL_BARS, (flat_min - OPEN_MIN) // 5)
-    rng = random.Random(seed)
-    hits = {"target": 0, "stop": 0, "neither": 0}
-    rs, exit_slots = [], []
-    steps = max(0, end_slot - start_slot)
-    fan = [[] for _ in range(steps)]
-    for k in range(replays):
-        price = plan["entry"]
-        done = None
-        for s in range(steps):
-            slot = start_slot + s
-            j = min(FULL_BARS - 1, max(1, slot + rng.randint(-window, window)))
-            o, h, l, c = rng.choice(pool[j])
-            hi, lo, cl = price * h, price * l, price * c
-            if done is None:
-                if lo <= plan["stop"]:
-                    done = ("stop", -1.0, slot)
-                elif hi >= plan["target"]:
-                    done = ("target", plan["target_r"], slot)
-            price = cl
-            fan[s].append(price)
-        if done is None:
-            done = ("neither", (price - plan["entry"]) / plan["risk"], end_slot - 1)
-        hits[done[0]] += 1
-        rs.append(done[1])
-        if done[0] != "neither":
-            exit_slots.append(done[2])
-
-    def pct(a, q):
-        a = sorted(a)
-        return a[min(len(a) - 1, int(q * len(a)))]
-
-    decided = hits["target"] + hits["stop"]
-    share = hits["target"] / decided if decided else 0.0
-    be = 1.0 / (1.0 + plan["target_r"])
-    fan_out = [{"slot": start_slot + s, "p5": pct(v, .05), "p25": pct(v, .25), "p50": pct(v, .5),
-                "p75": pct(v, .75), "p95": pct(v, .95)} for s, v in enumerate(fan) if v]
-    return {"replays": replays, "sessions": len(full),
-            "p_target": round(hits["target"] / replays, 3), "p_stop": round(hits["stop"] / replays, 3),
-            "p_neither": round(hits["neither"] / replays, 3), "avg_r": round(sum(rs) / replays, 3),
-            "target_share": round(share, 3), "break_even": round(be, 3),
-            "edge_pp": round((share - be) * 100, 1),
-            "median_exit_slot": int(pct(exit_slots, .5)) if exit_slots else end_slot - 1,
-            "fan": fan_out}
-
-
 def verdict(edge_pp):
     a = abs(edge_pp)
     if a < 5:
@@ -454,7 +396,7 @@ def risk_check(plan, sz, rules, acct, today_trades, now_min, market_open):
 
 # ---------------------------------------------------------------- one call
 
-def analyze(symbol, strategy, today_trades=(), now_ts=None, mc_replays=2000):
+def analyze(symbol, strategy, today_trades=(), now_ts=None, mc_replays=2000, intel=None):
     """Everything the chart needs for one ticker, plus the app's own decision."""
     now_ts = now_ts if now_ts is not None else time.time()
     rules, acct = strategy["rules"], strategy["account"]
@@ -501,23 +443,22 @@ def analyze(symbol, strategy, today_trades=(), now_ts=None, mc_replays=2000):
 
     orr = opening_range(day, params["or_minutes"])
     out["opening_range"] = orr and {"high": round(orr["high"], 2), "low": round(orr["low"], 2), "end": orr["end"]}
+    if keys.index(day_key) > 0:
+        prev = sess[keys[keys.index(day_key) - 1]]
+        out["prev_high"] = round(max(b["h"] for b in prev), 2)
     reasons = []
-    action, plan, entry_t, sim, walked = "KEIN TRADE", None, None, None, None
+    action, plan, entry_t, walked, i = "KEIN TRADE", None, None, None, None
 
     if not orr:
-        action = "WARTEN"
         reasons.append("Eröffnungsspanne (%d Min) bildet sich noch" % params["or_minutes"])
-        out["decision"] = {"action": action, "reasons": reasons, "state": "forming"}
+        out["decision"] = {"action": "WARTEN", "reasons": reasons, "state": "forming"}
         return out
 
     i = find_trigger(day, orr, params, rules)
     if i is not None:
         b = day[i]
-        plan = make_plan(b["c"], orr, params)
-        entry_t = b["t"] + BAR
-        if plan:
-            walked = walk(day, i + 1, plan, flat_min)
-        state = "triggered"
+        state, entry, entry_t = "triggered", b["c"], b["t"] + BAR
+        atr_v, vwap_v, rsi_v = atr(day[:i + 1]), b["vwap"], b.get("rsi")
     else:
         close_min_last = minute_of_day(to_et(day[-1]["t"] + BAR))
         if close_min_last >= hhmm_to_min(rules["no_entries_after"]) or not live:
@@ -525,41 +466,93 @@ def analyze(symbol, strategy, today_trades=(), now_ts=None, mc_replays=2000):
             reasons.append("Kein Ausbruch über %.2f bis %s" % (orr["high"], rules["no_entries_after"]))
         else:
             state = "waiting"
-            plan = make_plan(round_cent(orr["high"] + 0.01), orr, params)
-            entry_t = day[-1]["t"] + BAR
+            entry, entry_t = round_cent(orr["high"] + 0.01), day[-1]["t"] + BAR
+            atr_v, vwap_v, rsi_v = atr(day), day[-1]["vwap"], day[-1].get("rsi")
             dist = (orr["high"] - day[-1]["c"]) / day[-1]["c"] * 100
             reasons.append("Einstieg erst, wenn eine 5-Min-Kerze ÜBER %.2f schließt (%.2f%% entfernt)" % (orr["high"], max(dist, 0)))
 
-    if plan is None and state != "expired":
-        reasons.append("Stop zu eng – Spanne zu klein für einen sinnvollen Stop")
-        state = "refused"
+    opt = None
+    if state != "expired":
+        import optimize  # here, not at the top: optimize imports this module
+        start_slot = (minute_of_day(to_et(entry_t)) - OPEN_MIN) // 5
+        opt = optimize.choose(sess, day_key, entry, orr, atr_v, vwap_v, start_slot, params, rules, acct, replays=mc_replays)
+        if opt is None:
+            reasons.append("Kein Stop passt: Spanne zu eng oder zu weit, oder zu wenig Historie")
+            state = "refused"
+        else:
+            c = opt["chosen"]
+            plan = {k: c[k] for k in ("entry", "stop", "target", "risk", "target_r", "stop_kind")}
 
     if plan:
-        start_slot = (minute_of_day(to_et(entry_t)) - OPEN_MIN) // 5
-        sim = time_machine(sess, day_key, plan, start_slot, flat_min, replays=mc_replays)
+        if state == "triggered":
+            walked = walk(day, i + 1, plan, flat_min)
         sz = size(plan, acct)
         rc = risk_check(plan, sz, rules, acct, list(today_trades), now_min, market_open)
+        c = opt["chosen"]
+        be = 1.0 / (1.0 + plan["target_r"])
+        decided = c["p_target"] + c["p_stop"]
+        share = c["p_target"] / decided if decided else 0.0
+        mstep = c["median_exit_step"]
+        sim = {"replays": len(opt["paths"]["paths"]), "sessions": opt["paths"]["sessions"],
+               "p_target": c["p_target"], "p_stop": c["p_stop"], "p_neither": c["p_neither"],
+               "avg_r": c["ev_sim"], "ev_net": c["ev_net"], "ev_hist": c["ev_hist"], "n_hist": c["n_hist"],
+               "hist_win": c["hist_win"], "cost_r": c["cost_r"], "ev_usd": round(c["ev_net"] * plan["risk"] * sz["shares"], 2),
+               "target_share": round(share, 3), "break_even": round(be, 3), "edge_pp": round((share - be) * 100, 1),
+               "median_exit_t": entry_t + (mstep + 1) * BAR if mstep is not None else out["flat_ts"]}
+        sim["verdict"] = verdict(sim["edge_pp"])
+        import optimize
+        sim["fan"] = optimize.fan(opt["paths"], plan["entry"])
         out.update(plan=dict(plan, entry_t=entry_t, end_t=out["flat_ts"]), size=sz, risk=rc, sim=sim)
-        if sim:
-            sim["verdict"] = verdict(sim["edge_pp"])
-            sim["median_exit_t"] = open_ts + sim["median_exit_slot"] * BAR + BAR
+        out["optimizer"] = {"stops": optimize.STOPS, "targets": optimize.TARGETS, "labels": optimize.STOP_LABEL,
+                            "chosen": [c["stop_kind"], c["target_r"]],
+                            "default": [params["stop"], params["target_r"]],
+                            "kept_default": opt["default"] is not None and c is opt["default"],
+                            "n_past_breakouts": opt["n_past_breakouts"],
+                            "rows": [{k: r.get(k) for k in ("stop_kind", "target_r", "valid", "reachable", "stop", "target", "ev_net",
+                                                            "p_target", "p_stop", "n_hist", "ev_hist")} for r in opt["rows"]]}
         if walked:
             out["result"] = walked
 
-        # the app's own call
-        edge_ok = sim is not None and sim["edge_pp"] >= strategy["min_edge_pp"]
-        hist_ok = hist_sum["n"] < 8 or (hist_sum["avg_r"] or 0) > 0
-        if blocked:
-            reasons.append("%s gesperrt: %s" % (sym, blocked))
-        if sim is None:
-            reasons.append("Zu wenig Historie für die Simulation")
-        elif not edge_ok:
-            reasons.append("Simulation: %s (Vorteil %+.1f Pp, Minimum %+.1f)" % (sim["verdict"], sim["edge_pp"], strategy["min_edge_pp"]))
-        if not hist_ok:
-            reasons.append("Regel war auf %s in den letzten %d Ausbrüchen negativ (Ø %+.2fR)" % (sym, hist_sum["n"], hist_sum["avg_r"]))
-        good = edge_ok and hist_ok and not blocked
+        # ---- the checklist: when is it really worth it?
+        fresh = state == "triggered" and now_ts - entry_t <= FRESH_SECONDS
+        regime = market_regime(entry_t, now_ts) if sym != "SPY" else (entry > vwap_v)
+        read = (intel or {}).get("read")
+        min_ev = strategy.get("min_ev_r", 0.10)
+        hist_known = hist_sum["n"] >= 8
+        checks = [
+            {"key": "signal", "hard": True, "ok": state == "triggered",
+             "label": "Ausbruch bestätigt: 5-Min-Kerze schließt über %.2f" % orr["high"]},
+            {"key": "ev", "hard": True, "ok": c["ev_net"] >= min_ev,
+             "label": "Erwartung nach Kosten mindestens %+.2fR" % min_ev,
+             "detail": "%+.2fR ≈ %+.2f $ pro Trade" % (c["ev_net"], sim["ev_usd"])},
+            {"key": "risk", "hard": True, "ok": rc["pass"], "label": "Deine Risikoregeln",
+             "detail": "; ".join(rc["reasons"]) or "PASS"},
+            {"key": "blocked", "hard": True, "ok": not blocked, "label": "%s nicht gesperrt" % sym, "detail": blocked or ""},
+            {"key": "hist", "hard": False, "ok": ((hist_sum["avg_r"] or 0) > 0) if hist_known else None,
+             "label": "Setup auf %s in den letzten 60 Tagen positiv" % sym,
+             "detail": ("Ø %+.2fR über %d Ausbrüche" % (hist_sum["avg_r"], hist_sum["n"])) if hist_sum["n"] else "keine Ausbrüche"},
+            {"key": "vwap", "hard": False, "ok": entry > vwap_v, "label": "Einstieg über VWAP (%.2f)" % vwap_v},
+            {"key": "market", "hard": False, "ok": regime, "label": "Gesamtmarkt (SPY) über seinem VWAP"},
+            {"key": "time", "hard": False, "ok": out["flat_ts"] - entry_t >= 5400,
+             "label": "Mindestens 90 Min bis zum Glattstellen"},
+            {"key": "rsi", "hard": False, "ok": (rsi_v < 75) if rsi_v is not None else None,
+             "label": "Nicht überdehnt (RSI 14 unter 75)", "detail": "RSI %.0f" % rsi_v if rsi_v is not None else ""},
+            {"key": "liquid", "hard": False, "ok": (read != "against") if read else None,
+             "label": "Liquid: Profis halten nicht gegen einen Long"},
+        ]
+        soft = [x["ok"] for x in checks if not x["hard"] and x["ok"] is not None]
+        q = sum(soft) / len(soft) if soft else 0.5
+        grade = "A" if q >= 0.8 else "B" if q >= 0.5 else "C"
+        grade_ok = grade <= rules.get("min_quality", "B")
+        ev_ok = c["ev_net"] >= min_ev
+        good = ev_ok and grade_ok and not blocked
+        out["checks"], out["quality"] = checks, {"grade": grade, "soft_ok": sum(soft), "soft_known": len(soft),
+                                                 "min": rules.get("min_quality", "B")}
         out["signal_ok"] = bool(good and state == "triggered")
-        fresh = entry_t is not None and now_ts - entry_t <= FRESH_SECONDS
+        buy_limit = round_cent(plan["entry"] + 0.1 * plan["risk"])
+        out["order"] = {"buy_limit": buy_limit, "stop": plan["stop"], "target": plan["target"],
+                        "flat_by": rules["flat_by"], "shares": sz["shares"]}
+
         if state == "triggered":
             if walked:
                 action = "VORBEI"
@@ -571,16 +564,33 @@ def analyze(symbol, strategy, today_trades=(), now_ts=None, mc_replays=2000):
                     to_et(entry_t).strftime("%H:%M"), plan["entry"], day[-1]["c"]))
             elif good and rc["pass"]:
                 action = "KAUFEN"
-                reasons.insert(0, "Ausbruch bestätigt: Kerze schloss %s bei %.2f über %.2f" % (
-                    to_et(entry_t).strftime("%H:%M"), plan["entry"], orr["high"]))
+                reasons.insert(0, "Jetzt kaufen, Limit höchstens %.2f. Ausbruch um %s bestätigt, Qualität %s, Erwartung %+.2fR" % (
+                    buy_limit, to_et(entry_t).strftime("%H:%M"), grade, c["ev_net"]))
             else:
                 action = "KEIN TRADE"
-                reasons.extend(rc["reasons"])
         elif state == "waiting":
             action = "WARTEN" if good else "BEOBACHTEN"
-            if not good:
-                reasons.append("Selbst bei Ausbruch spricht die Statistik derzeit dagegen")
-        if good and fresh and state == "triggered" and not walked and not rc["pass"]:
-            reasons.insert(0, "Signal gut, aber deine Risikoregeln blockieren")
+            if good:
+                reasons.append("Bei Ausbruch handelbar: Qualität %s, Erwartung %+.2fR" % (grade, c["ev_net"]))
+        if action in ("KEIN TRADE", "BEOBACHTEN"):
+            for x in checks:
+                if x["ok"] is False and (x["hard"] or not grade_ok) and x["key"] != "signal":
+                    reasons.append("✗ " + x["label"] + (" – " + x["detail"] if x.get("detail") else ""))
+            if not grade_ok:
+                reasons.append("Qualität %s, verlangt ist mindestens %s (%d von %d Zusatzkriterien erfüllt)" % (
+                    grade, rules.get("min_quality", "B"), sum(soft), len(soft)))
     out["decision"] = {"action": action, "reasons": reasons, "state": state}
     return out
+
+
+def market_regime(at_ts, now_ts):
+    """Was SPY above its session VWAP on the last closed bar at or before at_ts?"""
+    try:
+        sess = sessions(fetch_bars("SPY", "60d", "5m", ttl=55)["bars"], now_ts)
+    except EngineError:
+        return None
+    day = sess.get(to_et(at_ts).date().isoformat())
+    if not day:
+        return None
+    bars = [b for b in day if b["t"] + BAR <= at_ts] or day[:1]
+    return bars[-1]["c"] > bars[-1]["vwap"]

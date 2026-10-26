@@ -1,5 +1,5 @@
 {
-  "_comment": "Die App liest und schreibt diese Datei. learn.py ändert params, min_edge_pp und blocked_symbols; account, rules und watchlist sind deine Einstellungen.",
+  "_comment": "Die App liest und schreibt diese Datei. learn.py ändert params, min_ev_r und blocked_symbols; account, rules und watchlist sind deine Einstellungen. cost_bps = Kosten (Spread + Slippage) pro Seite in Basispunkten; min_quality = schlechteste Qualitätsstufe, die noch gehandelt wird (A, B oder C).",
   "watchlist": [
     "SPY",
     "QQQ",
@@ -19,13 +19,14 @@
     "vol_x": 0,
     "trend": "none"
   },
-  "min_edge_pp": 5.0,
   "blocked_symbols": {},
   "rules": {
     "no_entries_before": "09:45",
     "no_entries_after": "15:30",
     "flat_by": "15:55",
-    "min_reward_risk": 1.0
+    "min_reward_risk": 1.0,
+    "cost_bps": 3,
+    "min_quality": "B"
   },
   "account": {
     "account_usd": 5000,
@@ -37,5 +38,6 @@
     "daily_loss_limit_usd": 150
   },
   "generation": 0,
-  "learned_at": null
+  "learned_at": null,
+  "min_ev_r": 0.1
 }

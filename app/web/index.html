@@ -104,6 +104,26 @@ input { font: inherit; padding: 6px 9px; border: 1px solid var(--line); border-r
 .rbars div { flex: 1; min-width: 4px; position: relative }
 .rbars i { position: absolute; left: 0; right: 0; border-radius: 2px }
 .news { grid-column: 1 / -1 }
+.plan2 { display: grid; grid-template-columns: minmax(0, 1fr) minmax(0, 1fr); gap: 16px }
+@media (max-width: 720px) { .plan2 { grid-template-columns: minmax(0, 1fr) } }
+.checks { list-style: none; margin: 0; padding: 0; display: flex; flex-direction: column; gap: 6px }
+.checks li { display: grid; grid-template-columns: 22px minmax(0, 1fr) auto; gap: 8px; align-items: baseline; font-size: 13px }
+.checks .ic { font-weight: 800; text-align: center; border-radius: 4px; font-size: 12px; line-height: 18px }
+.checks .y { background: var(--win-soft); color: var(--win) } .checks .n { background: var(--loss-soft); color: var(--loss) } .checks .u { background: var(--grid); color: var(--muted) }
+.checks small { color: var(--muted); font-family: var(--f-num); font-size: 11.5px; text-align: right }
+.checks .hard { font-size: 9.5px; font-weight: 800; letter-spacing: .06em; color: var(--muted); margin-left: 6px; text-transform: uppercase }
+.grade { display: inline-grid; place-items: center; width: 34px; height: 34px; border-radius: 6px; font: 800 20px var(--f-ui); color: #fff }
+.grade.A { background: var(--win) } .grade.B { background: var(--wait) } .grade.C { background: var(--loss) }
+.steps { margin: 0; padding-left: 20px; display: flex; flex-direction: column; gap: 8px; font-size: 13.5px }
+.steps b { font-family: var(--f-num) }
+.steps small { display: block; color: var(--muted); font-size: 12px }
+.heat { border-collapse: separate; border-spacing: 3px; width: 100%; font-family: var(--f-num); font-size: 11.5px }
+.heat th { font: 600 11px var(--f-ui); color: var(--muted); text-transform: none; letter-spacing: 0; padding: 2px 4px; border: 0; text-align: center }
+.heat th.rl { text-align: left; white-space: nowrap }
+.heat td { text-align: center; padding: 6px 2px; border-radius: 4px; border: 0; color: var(--fg); line-height: 1.2 }
+.heat td small { display: block; color: var(--muted); font-size: 10px }
+.heat td.pick { outline: 2px solid var(--accent); outline-offset: -1px; font-weight: 700 }
+.heat td.def { box-shadow: inset 0 0 0 1px var(--muted) }
 .smbar { display: flex; height: 10px; border-radius: 3px; overflow: hidden; background: var(--loss-soft); margin: 4px 0 2px }
 .smbar div { background: var(--win) }
 .live { display: inline-flex; align-items: center; gap: 5px; font-size: 11px; font-weight: 700; color: var(--accent); letter-spacing: .05em }
@@ -155,6 +175,10 @@ td { padding: 6px 8px; border-bottom: 1px solid var(--line); vertical-align: top
   <div class="main">
     <div id="call" class="call"><div class="act">Lädt…</div><div></div></div>
     <div class="levels" id="levels"></div>
+    <div class="plan2">
+      <div class="sec"><h2>Wann ist es wirklich sinnvoll?</h2><div id="checkBox"></div></div>
+      <div class="sec"><h2>So setzt du die Order</h2><div id="orderBox"></div></div>
+    </div>
     <div class="chartbox">
       <canvas id="chart" aria-label="Kurschart mit Positionsbox"></canvas>
       <div class="tip" id="tip" hidden></div>
@@ -175,6 +199,7 @@ td { padding: 6px 8px; border-bottom: 1px solid var(--line); vertical-align: top
       <div class="sec"><h2>Größe &amp; Risiko-Check</h2><div id="sizeBox"></div></div>
       <div class="sec"><h2>Diese Regel auf diesem Ticker, letzte 60 Tage</h2><div id="hist"></div></div>
       <div class="sec"><h2>Markt-Kontext · Liquid &amp; Indikatoren</h2><div id="ctxBox"></div></div>
+      <div class="sec" style="grid-column:1/-1"><h2>Warum genau dieser Stop und dieses Ziel?</h2><div class="scroll" id="heatBox"></div></div>
       <div class="sec news"><h2>News</h2><div id="news"></div></div>
     </div>
   </div>
@@ -264,7 +289,8 @@ function renderAnalysis() {
   const when = p ? (d.state === "waiting" ? "geplant ab nächster Kerze" : fmtET(p.entry_t) + " ET") : "";
   $("call").className = "call " + cls;
   $("call").innerHTML = `
-    <div><div class="act">${esc(d.action)}</div><div class="sym">${esc(a.symbol)} <span class="num muted">${f2(a.price)}</span></div></div>
+    <div><div class="act">${esc(d.action)}</div><div class="sym">${esc(a.symbol)} <span class="num muted">${f2(a.price)}</span>
+      ${a.quality ? `<span class="grade ${a.quality.grade}" title="Qualität" style="width:24px;height:24px;font-size:14px;vertical-align:-6px;margin-left:6px">${a.quality.grade}</span>` : ""}</div></div>
     <ul>${d.reasons.map((r) => `<li>${esc(r)}</li>`).join("") || "<li>Keine Auffälligkeiten</li>"}</ul>
     ${a.signal && (d.action === "KAUFEN" || d.action === "LÄUFT") ? `<div></div><div><button class="btn ghost" id="takeBtn">${a.signal.taken ? "✓ als gekauft markiert" : "Ich habe gekauft (zählt fürs Tageslimit)"}</button></div>` : ""}`;
   if ($("takeBtn")) $("takeBtn").onclick = async () => { await api("/api/taken", { id: a.signal.id, taken: !a.signal.taken }); select(a.symbol); };
@@ -273,8 +299,9 @@ function renderAnalysis() {
     const hold = p.end_t - p.entry_t;
     $("levels").innerHTML = `
       <div class="lv"><span>Einstieg</span><b>${f2(p.entry)}</b><em>${esc(when)}</em></div>
-      <div class="lv s"><span>Stop-Loss</span><b>${f2(p.stop)}</b><em>${sgn((p.stop - p.entry) / p.entry * 100)} %</em></div>
+      <div class="lv s"><span>Stop-Loss</span><b>${f2(p.stop)}</b><em>${sgn((p.stop - p.entry) / p.entry * 100)} % · ${esc(stopLabel(p.stop_kind))}</em></div>
       <div class="lv t"><span>Take-Profit</span><b>${f2(p.target)}</b><em>${sgn((p.target - p.entry) / p.entry * 100)} % · ${p.target_r}R</em></div>
+      <div class="lv"><span>Erwartung</span><b class="${s && s.ev_net >= 0 ? "pos" : "neg"}">${s ? sgn(s.ev_net) + "R" : "–"}</b><em>${s ? sgn(s.ev_usd) + " $ nach Kosten" : ""}</em></div>
       <div class="lv"><span>Stück</span><b>${z.shares}</b><em>$${z.cost.toFixed(0)}</em></div>
       <div class="lv s"><span>Verlust am Stop</span><b>−$${z.loss_at_stop.toFixed(2)}</b><em>1R</em></div>
       <div class="lv t"><span>Gewinn am Ziel</span><b>+$${z.gain_at_target.toFixed(2)}</b><em>${p.target_r}R</em></div>
@@ -292,8 +319,10 @@ function renderAnalysis() {
       <div style="width:${w(s.p_stop)};background:var(--loss)">${Math.round(s.p_stop * 100)}%</div></div>
       <dl class="kv"><dt>Ziel zuerst · offen bis Schluss · Stop zuerst</dt><dd>${s.replays.toLocaleString("de-DE")} Replays</dd>
       <dt>Ziel-Anteil vs. Break-even</dt><dd>${(s.target_share * 100).toFixed(0)} % / ${(s.break_even * 100).toFixed(0)} %</dd>
-      <dt>Vorteil (Minimum ${sgn(a.min_edge_pp, 1)})</dt><dd class="${s.edge_pp >= 0 ? "pos" : "neg"}">${sgn(s.edge_pp, 1)} Pp</dd>
-      <dt>Ø Ergebnis</dt><dd class="${s.avg_r >= 0 ? "pos" : "neg"}">${sgn(s.avg_r)} R</dd>
+      <dt>Ø Ergebnis in der Simulation</dt><dd class="${s.avg_r >= 0 ? "pos" : "neg"}">${sgn(s.avg_r)} R</dd>
+      <dt>Ø bei ${s.n_hist} echten Ausbrüchen</dt><dd class="${(s.ev_hist ?? 0) >= 0 ? "pos" : "neg"}">${s.ev_hist == null ? "–" : sgn(s.ev_hist) + " R"}</dd>
+      <dt>Kosten (Spread, Slippage)</dt><dd>−${s.cost_r.toFixed(2)} R</dd>
+      <dt>Erwartung nach Kosten (Minimum ${sgn(a.min_ev_r)})</dt><dd class="${s.ev_net >= a.min_ev_r ? "pos" : "neg"}">${sgn(s.ev_net)} R</dd>
       <dt>Typischer Ausstieg</dt><dd>${fmtET(s.median_exit_t)} ET</dd></dl>
       <p class="note"><b>${esc(s.verdict)}.</b> Aus ${s.sessions} vergangenen Handelstagen von ${esc(a.symbol)} nachgespielt.</p>`;
   } else $("tm").innerHTML = `<p class="muted">Erst mit einem Plan (Ausbruch oder geplanter Einstieg).</p>`;
@@ -319,6 +348,9 @@ function renderAnalysis() {
   $("news").innerHTML = news.length ? news.map((n) => `<a href="${esc(n.link)}" target="_blank" rel="noopener">${esc(n.title)}<small>${esc(n.publisher || "")} · ${n.time ? new Date(n.time * 1000).toLocaleString("de-DE", { dateStyle: "short", timeStyle: "short" }) : ""}</small></a>`).join("") : `<p class="muted">Keine Schlagzeilen.</p>`;
 
   renderContext();
+  renderChecks();
+  renderOrder();
+  renderHeat();
   startLive();
   $("mkt").querySelector(".dot").style.background = a.market_open ? "var(--win)" : "var(--muted)";
   $("mkt").lastElementChild.textContent = a.market_open ? "Markt offen" : "Markt zu · " + a.date;
@@ -327,6 +359,52 @@ function renderAnalysis() {
   drawChart();
 }
 
+const stopLabel = (k) => ((analysis && analysis.optimizer && analysis.optimizer.labels) || {})[k] || k || "";
+function renderChecks() {
+  const a = analysis, box = $("checkBox");
+  if (!a.checks) { box.innerHTML = `<p class="muted">${a.opening_range ? "Kein handelbarer Plan heute." : "Die Eröffnungsspanne bildet sich noch. Ab " + fmtET(a.session_open + a.params.or_minutes * 60) + " ET steht der Plan."}</p>`; return; }
+  const q = a.quality;
+  const head = `<div style="display:flex;gap:12px;align-items:center;margin-bottom:12px"><span class="grade ${q.grade}">${q.grade}</span>
+    <div><b>Qualität ${q.grade}</b> · ${q.soft_ok} von ${q.soft_known} Zusatzkriterien erfüllt<br><span class="muted" style="font-size:12px">Gehandelt wird ab Qualität ${q.min}, wenn alle Pflichtpunkte stimmen.</span></div></div>`;
+  box.innerHTML = head + `<ul class="checks">${a.checks.map((c) => `<li><span class="ic ${c.ok === true ? "y" : c.ok === false ? "n" : "u"}">${c.ok === true ? "✓" : c.ok === false ? "✗" : "?"}</span>
+    <span>${esc(c.label)}${c.hard ? '<span class="hard">Pflicht</span>' : ""}</span><small>${esc(c.detail || "")}</small></li>`).join("")}</ul>
+    <p class="note">„?“ = keine Daten. Die Zusatzkriterien werden zu jedem Signal mitgeschrieben; der Tab „Lernen“ zeigt, welche davon wirklich bessere Trades liefern.</p>`;
+}
+function renderOrder() {
+  const a = analysis, p = a.plan, o = a.order, s = a.sim, box = $("orderBox");
+  if (!p || !o || !s) { box.innerHTML = `<p class="muted">Kein Plan.</p>`; return; }
+  const act = a.decision.action;
+  const intro = act === "KAUFEN" ? `<p style="margin:0 0 10px"><b class="pos">Jetzt gültig.</b> Drei Orders, am besten als Bracket-Order:</p>`
+    : act === "WARTEN" ? `<p style="margin:0 0 10px"><b style="color:var(--wait)">Vorbereitet.</b> Erst wenn eine 5-Min-Kerze über ${f2(a.opening_range.high)} schließt:</p>`
+    : act === "LÄUFT" ? `<p style="margin:0 0 10px">Nur wenn du schon drin bist: Stop und Ziel so lassen.</p>`
+    : `<p style="margin:0 0 10px" class="muted">Heute nicht handeln. Zur Info, so sähe der Plan aus:</p>`;
+  box.innerHTML = intro + `<ol class="steps">
+    <li>Kaufen: <b>${o.shares} Stück</b> als Limit-Order bei <b>${f2(o.buy_limit)}</b> oder darunter
+      <small>Signal-Kurs ${f2(p.entry)}. Höher nicht nachjagen, sonst passt der Stop nicht mehr zum Risiko.</small></li>
+    <li>Stop-Loss: Stop-Market-Verkauf bei <b class="neg">${f2(o.stop)}</b> (−$${a.size.loss_at_stop.toFixed(2)})
+      <small>${esc(stopLabel(p.stop_kind))}. Kommt in ${Math.round(s.p_stop * 100)} % der Simulationen zuerst.</small></li>
+    <li>Take-Profit: Limit-Verkauf bei <b class="pos">${f2(o.target)}</b> (+$${a.size.gain_at_target.toFixed(2)}, ${p.target_r}R)
+      <small>Kommt in ${Math.round(s.p_target * 100)} % der Simulationen zuerst${s.hist_win != null ? `; ${Math.round(s.hist_win * 100)} % Gewinner bei ${s.n_hist} echten Ausbrüchen` : ""}.</small></li>
+    <li>Spätestens <b>${esc(o.flat_by)} ET</b> (${fmtLocal(p.end_t)} deine Zeit) alles verkaufen, egal wie es steht
+      <small>Typischer Ausstieg laut Simulation gegen ${fmtET(s.median_exit_t)} ET. Nichts über Nacht halten.</small></li></ol>`;
+}
+function renderHeat() {
+  const a = analysis, op = a.optimizer, box = $("heatBox");
+  if (!op) { box.innerHTML = `<p class="muted">Erst mit einem Plan.</p>`; return; }
+  const cell = (st, tr) => op.rows.find((r) => r.stop_kind === st && r.target_r === tr);
+  const col = (ev) => { const k = Math.min(1, Math.abs(ev) / 0.4) * 55 + 6; return `color-mix(in srgb, var(${ev >= 0 ? "--win" : "--loss"}) ${k.toFixed(0)}%, var(--panel))`; };
+  box.innerHTML = `<table class="heat"><thead><tr><th class="rl">Stop ↓ · Ziel →</th>${op.targets.map((t) => `<th>${t}R</th>`).join("")}</tr></thead><tbody>
+    ${op.stops.map((st) => `<tr><th class="rl">${esc(op.labels[st])}</th>${op.targets.map((tr) => {
+      const c = cell(st, tr);
+      if (!c || !c.valid || c.ev_net == null) return `<td class="muted">–</td>`;
+      const pick = op.chosen[0] === st && op.chosen[1] === tr, def = op.default[0] === st && op.default[1] === tr;
+      if (!c.reachable) return `<td class="muted ${def ? "def" : ""}" style="background:var(--grid)" title="Ziel kommt zu selten zuerst">${sgn(c.ev_net)}<small>${Math.round(c.p_target * 100)} % Ziel</small></td>`;
+      return `<td class="${pick ? "pick" : ""} ${def ? "def" : ""}" style="background:${col(c.ev_net)}" title="Stop ${f2(c.stop)} · Ziel ${f2(c.target)} · ${c.n_hist} echte Ausbrüche">${sgn(c.ev_net)}<small>${Math.round(c.p_target * 100)} % Ziel</small></td>`;
+    }).join("")}</tr>`).join("")}</tbody></table>
+    <p class="note">Jede Zelle zeigt das erwartete Ergebnis in R nach Kosten (heutige Simulation plus ${op.n_past_breakouts} echte Ausbrüche von ${esc(a.symbol)}) und wie oft das Ziel zuerst kommt.
+    Blau umrandet ist die Wahl${op.kept_default ? " (Standard der Regel, weil keine Alternative um mindestens 0,03R besser war)" : ""}, grau umrandet der Standard der Regel. „–“ heißt: Stop zu eng, weiter als 4 % oder zu groß für dein Verlustlimit. Grau: Das Ziel kommt in weniger als 15 % der Fälle zuerst und ist damit kein echter Take-Profit.
+    Weil die beste aus 30 Kombinationen gewählt wird, ist ihre Zahl eher etwas zu optimistisch. Die Lernschleife vergleicht sie mit den echten Ergebnissen und verlangt bei Bedarf mehr.</p>`;
+}
 function renderContext() {
   const a = analysis, i = a.indicators || {}, pp = a.perp, q = a.intel;
   const pct = (x) => (x * 100).toFixed(0) + " %";
@@ -462,6 +540,12 @@ function drawChart() {
     ctx.fillText("Spanne Hoch " + f2(r.high), X(t0) + 4, Y(r.high) - 2); ctx.textBaseline = "middle";
   }
 
+  // previous day's high: a common place for a breakout to stall
+  if (a.prev_high && a.prev_high > lo && a.prev_high < hi) {
+    ctx.setLineDash([1, 3]); ctx.strokeStyle = C.muted; line(X(t0), Y(a.prev_high), X(t1), Y(a.prev_high)); ctx.setLineDash([]);
+    ctx.fillStyle = C.muted; ctx.font = `10.5px ${css("--f-ui")}`; ctx.textBaseline = "bottom"; ctx.textAlign = "right";
+    ctx.fillText("Vortageshoch " + f2(a.prev_high), W - padR - 4, Y(a.prev_high) - 2); ctx.textAlign = "start"; ctx.textBaseline = "middle";
+  }
   // the position box
   const bw = (X(t0 + 300) - X(t0));
   if (p) {
@@ -606,13 +690,16 @@ async function loadState() {
   const st = stateDoc.strategy, sc = stateDoc.score;
   $("ruleNow").textContent = "Regel: " + stateDoc.describe + (st.learned_at ? " · gelernt " + st.learned_at : "");
   $("lRule").innerHTML = `<p style="font-size:17px;font-weight:700;margin:0 0 8px">${esc(stateDoc.describe)}</p>
-    <dl class="kv"><dt>Generation</dt><dd>${st.generation || 0}</dd><dt>Mindest-Vorteil Time Machine</dt><dd>${sgn(st.min_edge_pp, 1)} Pp</dd>
+    <dl class="kv"><dt>Generation</dt><dd>${st.generation || 0}</dd><dt>Mindest-Erwartung nach Kosten</dt><dd>${sgn(st.min_ev_r ?? 0.1)} R</dd><dt>Mindest-Qualität</dt><dd>${esc(st.rules.min_quality || "B")}</dd>
     <dt>Gesperrte Ticker</dt><dd>${Object.keys(st.blocked_symbols || {}).join(", ") || "keine"}</dd><dt>Zuletzt gelernt</dt><dd>${esc(st.learned_at || "noch nie")}</dd></dl>`;
   $("lScore").innerHTML = sc.n ? `<dl class="kv"><dt>Abgerechnete Signale</dt><dd>${sc.n}</dd><dt>Trefferquote</dt><dd>${(sc.win_rate * 100).toFixed(0)} %</dd>
     <dt>Ø pro Signal</dt><dd class="${sc.avg_r >= 0 ? "pos" : "neg"}">${sgn(sc.avg_r)} R</dd>
     ${sc.calibration ? `<dt>Time Machine sagte / real</dt><dd>${(sc.calibration.predicted * 100).toFixed(0)} % / ${(sc.calibration.actual * 100).toFixed(0)} %</dd><dt>Brier</dt><dd>${sc.calibration.brier}</dd>` : ""}
     ${sc.false_breakout_share != null ? `<dt>Fehlausbrüche unter den Stops</dt><dd>${(sc.false_breakout_share * 100).toFixed(0)} %</dd>` : ""}
     ${["with", "neutral", "against"].map((k) => sc.by_liquid && sc.by_liquid[k].n ? `<dt>Liquid ${({ with: "Profis dafür", neutral: "neutral", against: "Profis dagegen" })[k]}</dt><dd>${sc.by_liquid[k].n} · ${sgn(sc.by_liquid[k].avg_r)} R</dd>` : "").join("")}
+    ${sc.ev_calibration ? `<dt>Erwartung vorhergesagt / real</dt><dd>${sgn(sc.ev_calibration.predicted)} / ${sgn(sc.ev_calibration.actual)} R</dd>` : ""}
+    ${"ABC".split("").map((g) => sc.by_grade && sc.by_grade[g].n ? `<dt>Qualität ${g}</dt><dd>${sc.by_grade[g].n} · ${sgn(sc.by_grade[g].avg_r)} R</dd>` : "").join("")}
+    ${Object.entries(sc.by_check || {}).map(([k, v]) => `<dt>${esc(CHECK_NAMES[k] || k)}: ja / nein</dt><dd>${v.yes.n ? sgn(v.yes.avg_r) : "–"} / ${v.no.n ? sgn(v.no.avg_r) : "–"} R</dd>`).join("")}
     <dt>Davon selbst gekauft</dt><dd>${sc.taken.n}${sc.taken.n ? " · " + sgn(sc.taken.avg_r) + " R" : ""}</dd></dl>`
     : `<p class="muted">Noch keine abgerechneten Signale. Jedes KAUFEN-Signal wird automatisch mitgeschrieben und nach Handelsschluss abgerechnet, auch wenn du es nicht handelst.</p>`;
   $("lHist").innerHTML = stateDoc.history.length ? stateDoc.history.map((c) => `<div class="lesson"><b>${esc(c.at)} · Gen. ${c.generation} · ${esc(c.field)}</b><div>${esc(c.why)}</div></div>`).join("") : `<p class="muted">Noch keine Lektion. Die Regel ändert sich erst, wenn eine Variante über mindestens 30 Trades klar besser ist.</p>`;
@@ -632,7 +719,8 @@ function renderRank() {
     ${L.ranking.map((r) => `<tr><td>${esc(r.label)}</td><td class="num">${r.n}</td><td class="num">${(r.win_rate * 100).toFixed(0)} %</td><td class="num ${r.avg_r >= 0 ? "pos" : "neg"}">${sgn(r.avg_r)}</td><td class="num">${sgn(r.lcb)}</td></tr>`).join("")}</tbody></table>
     <p class="note">Gewählt wird nach unterer Schranke (Ø R minus Standardfehler), damit ein Glückstreffer die Regel nicht kippt.</p>`;
 }
-const LABELS = { account_usd: "Konto ($)", max_loss_per_trade_usd: "Max. Verlust pro Trade ($)", position_cap_pct: "Max. Position (% Konto)", max_order_usd: "Max. Order ($)",
+const CHECK_NAMES = { hist: "Setup historisch positiv", vwap: "Über VWAP", market: "SPY über VWAP", time: "≥ 90 Min Zeit", rsi: "RSI unter 75", liquid: "Liquid nicht dagegen" };
+const LABELS = { cost_bps: "Kosten pro Seite (Basispunkte)", min_quality: "Mindest-Qualität (A/B/C)", account_usd: "Konto ($)", max_loss_per_trade_usd: "Max. Verlust pro Trade ($)", position_cap_pct: "Max. Position (% Konto)", max_order_usd: "Max. Order ($)",
   cash_buffer_pct: "Cash-Puffer (%)", max_trades_per_day: "Trades pro Tag", daily_loss_limit_usd: "Tagesverlust-Limit ($)",
   no_entries_before: "Kein Einstieg vor (ET)", no_entries_after: "Kein Einstieg nach (ET)", flat_by: "Glattstellen bis (ET)", min_reward_risk: "Min. Chance/Risiko" };
 function renderSettings(st) {

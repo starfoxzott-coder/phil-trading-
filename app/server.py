@@ -37,29 +37,19 @@ HEAD = (b'<!doctype html><html lang="de"><head><meta charset="utf-8">'
 def analyze(symbol, replays=2000, news=True):
     strategy = learn.load_strategy()
     date = engine.et_now().date().isoformat()
-    a = engine.analyze(symbol, strategy, learn.today_trades(date), mc_replays=replays)
+    intel = liquid.intel(symbol)
+    a = engine.analyze(symbol, strategy, learn.today_trades(date), mc_replays=replays, intel=intel)
     a["perp"] = liquid.perp_context(symbol)
     a["live_coin"] = liquid.perp_coin(symbol)
-    a["intel"] = liquid.intel(symbol)
-    note = intel_note(a["intel"])
-    if note and a.get("plan"):
-        a["decision"]["reasons"].append(note)
+    a["intel"] = intel
     with _lock:
         sig = learn.record_signal(a)
     a["signal"] = sig
     a["generation"] = strategy.get("generation", 0)
-    a["min_edge_pp"] = strategy["min_edge_pp"]
+    a["min_ev_r"] = strategy.get("min_ev_r", 0.10)
     if news:
         a["news"] = engine.fetch_news(symbol)
     return a
-
-
-def intel_note(i):
-    """Liquid's positioning as a hint. It does not change the call until learning has evidence for it."""
-    if not i or i.get("read") not in ("with", "against"):
-        return None
-    txt = "Liquid: Smart Money %.0f%% long, Masse %.0f%% long" % (i["smart_long"] * 100, i["crowd_long"] * 100)
-    return txt + (" – Profis halten gegen einen Long" if i["read"] == "against" else " – Profis stützen einen Long")
 
 
 def scan(replays=600):
@@ -72,13 +62,14 @@ def scan(replays=600):
             return {"symbol": sym, "action": a["decision"]["action"], "reason": (a["decision"]["reasons"] or [""])[0],
                     "price": a["price"], "entry": (a.get("plan") or {}).get("entry"),
                     "stop": (a.get("plan") or {}).get("stop"), "target": (a.get("plan") or {}).get("target"),
-                    "edge_pp": sim.get("edge_pp"), "hist_avg_r": a["history"]["avg_r"], "hist_n": a["history"]["n"]}
+                    "edge_pp": sim.get("edge_pp"), "ev_net": sim.get("ev_net"),
+                    "grade": (a.get("quality") or {}).get("grade"), "hist_avg_r": a["history"]["avg_r"], "hist_n": a["history"]["n"]}
         except Exception as e:  # one bad ticker must not sink the scan
             return {"symbol": sym, "action": "FEHLER", "reason": str(e)[:120]}
 
     with concurrent.futures.ThreadPoolExecutor(4) as ex:
         rows = list(ex.map(one, strategy["watchlist"]))
-    rows.sort(key=lambda r: (ORDER.get(r["action"], 9), -(r.get("edge_pp") or -99)))
+    rows.sort(key=lambda r: (ORDER.get(r["action"], 9), -(r.get("ev_net") if r.get("ev_net") is not None else -99)))
     return rows
 
 
@@ -108,8 +99,12 @@ def save_settings(body):
             s["account"][k] = float(v)
     for k, v in (body.get("rules") or {}).items():
         if k in s["rules"]:
-            if k == "min_reward_risk":
+            if k in ("min_reward_risk", "cost_bps"):
                 s["rules"][k] = float(v)
+            elif k == "min_quality":
+                if str(v).strip().upper() not in ("A", "B", "C"):
+                    raise ValueError("Mindest-Qualität: A, B oder C")
+                s["rules"][k] = str(v).strip().upper()
             else:
                 engine.hhmm_to_min(str(v))  # validates HH:MM
                 s["rules"][k] = str(v)
