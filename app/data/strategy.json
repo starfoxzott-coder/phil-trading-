@@ -1,0 +1,40 @@
+{
+  "_comment": "Die App liest und schreibt diese Datei. learn.py ändert params, min_edge_pp und blocked_symbols; account, rules und watchlist sind deine Einstellungen.",
+  "watchlist": [
+    "SPY",
+    "QQQ",
+    "AAPL",
+    "MSFT",
+    "NVDA",
+    "TSLA",
+    "AMD",
+    "META",
+    "AMZN",
+    "GOOGL"
+  ],
+  "params": {
+    "or_minutes": 15,
+    "stop": "or-mid",
+    "target_r": 2.0,
+    "vol_x": 0
+  },
+  "min_edge_pp": 5.0,
+  "blocked_symbols": {},
+  "rules": {
+    "no_entries_before": "09:45",
+    "no_entries_after": "15:30",
+    "flat_by": "15:55",
+    "min_reward_risk": 1.0
+  },
+  "account": {
+    "account_usd": 5000,
+    "max_loss_per_trade_usd": 50,
+    "position_cap_pct": 25,
+    "max_order_usd": 2500,
+    "cash_buffer_pct": 10,
+    "max_trades_per_day": 3,
+    "daily_loss_limit_usd": 150
+  },
+  "generation": 0,
+  "learned_at": null
+}

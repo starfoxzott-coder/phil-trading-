@@ -1,0 +1,3 @@
+data/journal.jsonl
+data/*.tmp
+__pycache__/
