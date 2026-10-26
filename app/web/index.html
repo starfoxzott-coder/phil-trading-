@@ -795,9 +795,10 @@ function drawChart() {
     if (px < p.entry) {
       const xa = X(p.entry_t) - 6;
       ctx.strokeStyle = C.wait; ctx.setLineDash([4, 3]); ctx.lineWidth = 1.5; line(xa, Y(px), xa, Y(p.entry)); ctx.setLineDash([]); ctx.lineWidth = 1;
-      ctx.font = `700 11px ${css("--f-ui")}`; ctx.fillStyle = C.wait; ctx.textAlign = "right"; ctx.textBaseline = "middle";
-      ctx.fillText(`noch ${f2(p.entry - px)} $ (${((p.entry - px) / px * 100).toFixed(2)} %) bis Einstieg`, xa - 6, (Y(px) + Y(p.entry)) / 2);
-      ctx.textAlign = "start";
+      ctx.font = `700 11px ${css("--f-ui")}`; ctx.textAlign = "right"; ctx.textBaseline = "middle";
+      const gt = `noch ${f2(p.entry - px)} $ (${((p.entry - px) / px * 100).toFixed(2)} %) bis Einstieg`, ym = (Y(px) + Y(p.entry)) / 2, tw = ctx.measureText(gt).width;
+      ctx.fillStyle = C.panel; ctx.globalAlpha = .9; ctx.fillRect(xa - 10 - tw, ym - 9, tw + 8, 18); ctx.globalAlpha = 1;
+      ctx.fillStyle = C.wait; ctx.fillText(gt, xa - 6, ym); ctx.textAlign = "start";
     }
   }
   // live breakout watch: price above the range high, confirmation only at the candle close
@@ -1383,8 +1384,10 @@ function exGap(ctx, C, x, Y, plan, px) {
   if (analysis.decision.state !== "waiting" || px >= plan.entry) return;
   ctx.strokeStyle = C.wait; ctx.setLineDash([4, 3]); ctx.lineWidth = 1.5; exLine(x - 6, Y(px), x - 6, Y(plan.entry)); ctx.setLineDash([]); ctx.lineWidth = 1;
   const t = `noch ${f2(plan.entry - px)} $ (${((plan.entry - px) / px * 100).toFixed(2)} %) bis Einstieg ${f2(plan.entry)}`;
-  ctx.font = `700 11px ${css("--f-ui")}`; ctx.fillStyle = C.wait; ctx.textAlign = "right"; ctx.textBaseline = "middle";
-  ctx.fillText(t, x - 12, (Y(px) + Y(plan.entry)) / 2); ctx.textAlign = "start";
+  ctx.font = `700 11px ${css("--f-ui")}`; ctx.textAlign = "right"; ctx.textBaseline = "middle";
+  const ym = (Y(px) + Y(plan.entry)) / 2, tw = ctx.measureText(t).width;
+  ctx.fillStyle = C.panel; ctx.globalAlpha = .9; ctx.fillRect(x - 16 - tw, ym - 9, tw + 8, 18); ctx.globalAlpha = 1;
+  ctx.fillStyle = C.wait; ctx.fillText(t, x - 12, ym); ctx.textAlign = "start";
 }
 function exLine(x1, y1, x2, y2) { exCtx.beginPath(); exCtx.moveTo(x1, y1); exCtx.lineTo(x2, y2); exCtx.stroke(); }
 function exTag(x, y, text, color) {
