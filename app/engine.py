@@ -37,7 +37,7 @@ CLOSE_MIN = 16 * 60
 FULL_BARS = 78  # 5-minute bars in a full session; full_bars() for other lengths
 FRESH_SECONDS = 600  # 5-minute bars: a trigger is a buy for 10 minutes; fresh_seconds() scales it
 BAR_MINUTES = (1, 2, 5, 15, 30)
-STEP = {"1m": 60, "2m": 120, "5m": 300, "15m": 900, "30m": 1800}
+STEP = {"1m": 60, "2m": 120, "5m": 300, "15m": 900, "30m": 1800, "60m": 3600, "1d": 86400}
 
 
 def full_bars(d):
@@ -152,8 +152,10 @@ def fetch_bars(symbol, rng="60d", interval="5m", ttl=60):
         for i, t in enumerate(res.get("timestamp") or []):
             o, h, l, c = (q.get(k, [None])[i] for k in ("open", "high", "low", "close"))
             v = (q.get("volume") or [0])[i] or 0
-            if None in (o, h, l, c) or t % step:
-                continue  # drop Yahoo's live tick and empty bars
+            if None in (o, h, l, c):
+                continue  # empty bar
+            if step < 86400 and ((minute_of_day(to_et(t)) - OPEN_MIN) * 60) % step:
+                continue  # Yahoo's live tick, off the bar grid (bars start at 9:30 New York)
             bars.append({"t": t, "o": o, "h": h, "l": l, "c": c, "v": v, "d": step})
         return {"symbol": sym, "meta": res.get("meta", {}), "bars": bars}
 

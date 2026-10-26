@@ -157,6 +157,17 @@ select { font: inherit; padding: 6px 9px; border: 1px solid var(--line); border-
 .tf button[aria-pressed="true"] { background: var(--accent); color: #fff }
 .tf button:disabled { opacity: .5; cursor: progress }
 .tfinfo { font-size: 12px; color: var(--muted) }
+.exwin { position: fixed; inset: 0; z-index: 25; background: var(--bg); display: flex; flex-direction: column;
+  padding: max(10px, env(safe-area-inset-top, 0px)) max(16px, env(safe-area-inset-right, 0px)) max(10px, env(safe-area-inset-bottom, 0px)) max(16px, env(safe-area-inset-left, 0px)); gap: 8px }
+.exbar { display: flex; flex-wrap: wrap; gap: 8px 12px; align-items: center }
+.exbar h2 { margin: 0 6px 0 0; font-size: 16px; font-weight: 800; font-stretch: 85%; text-transform: uppercase; letter-spacing: .01em }
+.exbar .tg { display: inline-flex; flex-wrap: wrap; gap: 4px 12px; font-size: 12.5px; color: var(--muted) }
+.exbar .tg label { display: inline-flex; gap: 4px; align-items: center; cursor: pointer; white-space: nowrap }
+@media (max-width: 560px) { .exbar { gap: 6px 8px } .exbar h2 { display: none } .exbar .tf button { padding: 4px 6px } #exClose { padding: 5px 10px } }
+.exbody { flex: 1; min-height: 0; background: var(--panel); border: 1px solid var(--line); border-radius: 8px; position: relative }
+.exbody canvas { width: 100%; height: 100%; display: block; touch-action: none; cursor: crosshair }
+#exInfo { font: 12px var(--f-num); color: var(--muted); min-height: 2.6em }
+.exopen { position: absolute; top: 8px; right: 8px; font-size: 12px; padding: 4px 10px; z-index: 2 }
 .closeform { margin-top: 12px; border-top: 1px solid var(--line); padding-top: 12px }
 .tags { border: 0; padding: 0; margin: 10px 0 0; display: flex; flex-wrap: wrap; gap: 4px 14px; font-size: 12.5px }
 .tags legend { font-size: 12px; color: var(--muted); margin-bottom: 4px; padding: 0 }
@@ -220,6 +231,7 @@ td { padding: 6px 8px; border-bottom: 1px solid var(--line); vertical-align: top
       <div class="sec"><h2>So setzt du die Order</h2><div id="orderBox"></div></div>
     </div>
     <div class="chartbox">
+      <button class="btn ghost exopen" id="exOpenBtn" title="Großes Chart mit Historie, Zoom und eigener Kerzenlänge">⤢ Interaktives Chart</button>
       <canvas id="chart" aria-label="Kurschart mit Positionsbox"></canvas>
       <div class="tip" id="tip" hidden></div>
       <div class="legend">
@@ -276,6 +288,27 @@ td { padding: 6px 8px; border-bottom: 1px solid var(--line); vertical-align: top
     <p class="note" id="tdMsg" role="status"></p>
     <div class="row"><button class="btn" id="tdSave">Speichern</button><button type="button" class="btn ghost" id="tdCancel">Abbrechen</button></div>
   </form>
+</div>
+
+<div class="exwin" id="exWin" hidden role="dialog" aria-modal="true" aria-label="Interaktives Chart">
+  <div class="exbar">
+    <h2>Chart</h2>
+    <select id="exSym" aria-label="Ticker"></select>
+    <div class="tf" role="group" aria-label="Kerzenlänge im Chart" id="exIv"></div>
+    <div class="tf" role="group" aria-label="Kerzenlänge der Vorschläge" id="exSig"></div>
+    <div class="tf" role="group" aria-label="Zeitraum" id="exRange"></div>
+    <div class="tg">
+      <label for="exT_plan"><input type="checkbox" id="exT_plan"> Heutiger Plan</label>
+      <label for="exT_sig"><input type="checkbox" id="exT_sig"> Vergangene Signale</label>
+      <label for="exT_mine"><input type="checkbox" id="exT_mine"> Meine Trades</label>
+      <label for="exT_vwap"><input type="checkbox" id="exT_vwap"> VWAP</label>
+      <label for="exT_ema"><input type="checkbox" id="exT_ema"> EMA 20</label>
+    </div>
+    <span class="spacer"></span>
+    <button class="btn ghost" id="exClose">Schließen (Esc)</button>
+  </div>
+  <div class="exbody"><canvas id="exCanvas" aria-label="Interaktiver Kurschart"></canvas></div>
+  <div id="exInfo" role="status"></div>
 </div>
 
 <section id="view-learn" hidden>
@@ -525,7 +558,7 @@ function putM1(c) { live.m1.set(c[0], c); if (live.m1.size > 90) live.m1.delete(
 function liveTick() {
   if (live.raf) return;
   live.raf = requestAnimationFrame(() => {
-    live.raf = 0; drawChart();
+    live.raf = 0; drawChart(); if (ex.open) exDraw();
     const slot = Math.floor(Date.now() / 1000 / BAR()) * BAR();
     if (live.slot && slot !== live.slot) { // a 5-minute candle just closed: re-run the call once Yahoo has it
       const sym = current; setTimeout(() => sym === current && refresh(), 20000); setTimeout(() => sym === current && refresh(), 75000);
@@ -1021,6 +1054,316 @@ function bindCards() {
   });
 }
 $("newTradeBtn").onclick = () => openTradeDialog({});
+
+/* ------------------------------------------------ interactive chart window */
+const ex = { open: false, sym: null, iv: "5", data: null, sig: null, from: 0, to: 0, hover: null, cache: {}, timer: 0,
+  show: { vwap: true, ema: true, sig: true, mine: true, plan: true } };
+const EX_IVS = [["1", "1"], ["2", "2"], ["5", "5"], ["15", "15"], ["30", "30"], ["60", "1 Std"], ["D", "Tag"]];
+const EX_RANGES = { intraday: [["1", "1 Tag"], ["5", "5 Tage"], ["20", "20 Tage"], ["all", "Alles"]], D: [["66", "3 Mon."], ["130", "6 Mon."], ["260", "1 Jahr"], ["all", "2 Jahre"]] };
+try { const v = localStorage.getItem("phil.ex.iv"); if (v) ex.iv = v; } catch (e) {}
+
+function exBuildToolbar() {
+  $("exIv").innerHTML = `<span>Chart</span>` + EX_IVS.map(([v, l]) => `<button data-v="${v}" aria-pressed="${v === ex.iv}">${l}</button>`).join("") + `<span>${ex.iv === "D" || ex.iv === "60" ? "" : "Min"}</span>`;
+  $("exIv").querySelectorAll("button").forEach((b) => b.onclick = () => { ex.iv = b.dataset.v; try { localStorage.setItem("phil.ex.iv", ex.iv); } catch (e) {} exBuildToolbar(); exLoad(true); });
+  const sm = (stateDoc && stateDoc.strategy.rules.bar_minutes) || (analysis && analysis.bar_minutes) || 5;
+  $("exSig").innerHTML = `<span>Vorschläge</span>` + [1, 2, 5, 15, 30].map((m) => `<button data-m="${m}" aria-pressed="${m === +sm}">${m}</button>`).join("") + `<span>Min</span>`;
+  $("exSig").querySelectorAll("button").forEach((b) => b.onclick = async () => {
+    if (b.getAttribute("aria-pressed") === "true") return;
+    try {
+      await api("/api/settings", { rules: { bar_minutes: +b.dataset.m } });
+      markTF(b.dataset.m); stopLive(); live.sym = null; ex.sig = null;
+      await loadState(); exBuildToolbar(); await loadScan(); if (current) await select(current); exLoadSignals(); exDraw();
+    } catch (e) { $("exInfo").textContent = e.message; }
+  });
+  const rg = EX_RANGES[ex.iv === "D" ? "D" : "intraday"];
+  $("exRange").innerHTML = `<span>Zeitraum</span>` + rg.map(([v, l]) => `<button data-r="${v}">${l}</button>`).join("");
+  $("exRange").querySelectorAll("button").forEach((b) => b.onclick = () => { exSetRange(b.dataset.r); exDraw(); });
+  $("exSym").innerHTML = (stateDoc ? stateDoc.strategy.watchlist : [ex.sym]).map((s) => `<option${s === ex.sym ? " selected" : ""}>${esc(s)}</option>`).join("");
+}
+function openExplorer(sym) {
+  ex.sym = sym || current || "SPY"; ex.open = true;
+  $("exWin").hidden = false; document.body.style.overflow = "hidden";
+  exBuildToolbar(); exLoad(true); exLoadSignals();
+  clearInterval(ex.timer);
+  ex.timer = setInterval(() => { if (ex.open && !DEMO && analysis && analysis.market_open && ex.iv !== "D") exLoad(false, true); }, 30000);
+}
+function closeExplorer() { ex.open = false; $("exWin").hidden = true; document.body.style.overflow = ""; clearInterval(ex.timer); }
+$("exClose").onclick = closeExplorer;
+$("exSym").onchange = () => { ex.sym = $("exSym").value; exLoad(true); exLoadSignals(); if (ex.sym !== current) select(ex.sym); };
+document.addEventListener("keydown", (e) => {
+  if (!ex.open) return;
+  if (e.key === "Escape") closeExplorer();
+  const span = ex.to - ex.from;
+  if (e.key === "ArrowLeft") { exPan(-span * 0.15); }
+  if (e.key === "ArrowRight") { exPan(span * 0.15); }
+  if (e.key === "+" || e.key === "=") exZoom(0.8, 0.5);
+  if (e.key === "-") exZoom(1.25, 0.5);
+});
+["vwap", "ema", "sig", "mine", "plan"].forEach((k) => { const el = $("exT_" + k); el.checked = ex.show[k]; el.onchange = () => { ex.show[k] = el.checked; exDraw(); }; });
+
+async function exLoad(resetView, quiet) {
+  const key = ex.sym + "|" + ex.iv;
+  if (!quiet) $("exInfo").textContent = "Lädt " + ex.sym + "…";
+  try {
+    let d = ex.cache[key];
+    if (!d || quiet) {
+      d = DEMO ? (DEMO.charts && DEMO.charts[key]) : await api(`/api/chart?symbol=${encodeURIComponent(ex.sym)}&iv=${ex.iv}`);
+      if (!d) throw new Error("Im Schnappschuss gibt es dieses Chart nicht. Lokal gestartet geht jede Kombination.");
+      ex.cache[key] = d;
+    }
+    const keepRight = ex.data && ex.to >= ex.data.bars.length - 1;
+    const span = ex.to - ex.from;
+    ex.data = d;
+    if (resetView || !span) exSetRange(ex.iv === "D" ? "130" : (ex.iv === "1" || ex.iv === "2" ? "1" : ex.iv === "60" ? "20" : "5"));
+    else if (keepRight) { ex.to = d.bars.length - 0.5 + 3; ex.from = ex.to - span; }
+    if (!quiet) exInfoDefault();
+    exDraw();
+  } catch (e) { $("exInfo").textContent = e.message; ex.data = null; exDraw(); }
+}
+async function exLoadSignals() {
+  ex.sig = null;
+  try { ex.sig = DEMO ? (DEMO.past && DEMO.past[ex.sym + "|" + ((DEMO.active) || 5)]) : await api(`/api/past-signals?symbol=${encodeURIComponent(ex.sym)}`); }
+  catch (e) { ex.sig = null; }
+  exInfoDefault(); exDraw();
+}
+function exInfoDefault() {
+  const s = ex.sig, d = ex.data;
+  let t = d ? `${esc(ex.sym)} · ${d.bars.length.toLocaleString("de-DE")} Kerzen${d.days ? " · " + d.days + " Handelstage" : ""}. Mausrad = Zoom, Ziehen = Verschieben, Doppelklick = zurück.` : "";
+  if (s && s.summary && s.summary.n) t += ` Vergangene Signale (${s.minutes}-Min-Kerzen, ${esc(s.rule)}): ${s.summary.n}× · Treffer ${(s.summary.win_rate * 100).toFixed(0)} % · Ø ${sgn(s.summary.avg_r)}R.`;
+  $("exInfo").innerHTML = t;
+}
+function exSetRange(r) {
+  const d = ex.data; if (!d) return;
+  const n = d.bars.length;
+  let count;
+  if (r === "all") count = n;
+  else if (ex.iv === "D") count = +r;
+  else {
+    // r trading days back: find the index where that day starts
+    const days = []; let last = "";
+    d.bars.forEach((b, i) => { const k = dayKey(b[0]); if (k !== last) { days.push(i); last = k; } });
+    const start = days[Math.max(0, days.length - +r)] || 0;
+    count = n - start;
+  }
+  ex.to = n - 0.5 + Math.max(2, count * 0.04);
+  ex.from = Math.max(-0.5, n - 0.5 - count);
+}
+const dayKey = (ts) => new Intl.DateTimeFormat("en-CA", { timeZone: "America/New_York" }).format(ts * 1000);
+const fmtDate = (ts, long) => new Intl.DateTimeFormat("de-DE", { timeZone: "America/New_York", day: "2-digit", month: "2-digit", year: long ? "2-digit" : undefined }).format(ts * 1000);
+function exPan(dx) {
+  const n = ex.data ? ex.data.bars.length : 0, span = ex.to - ex.from;
+  ex.from = Math.min(Math.max(-0.5 - span * 0.5, ex.from + dx), n - span * 0.5);
+  ex.to = ex.from + span; exDraw();
+}
+function exZoom(k, at) {
+  const n = ex.data ? ex.data.bars.length : 0, span = ex.to - ex.from;
+  const ns = Math.min(Math.max(10, span * k), Math.max(10, n * 1.1));
+  const c = ex.from + span * at;
+  ex.from = c - ns * at; ex.to = ex.from + ns; exDraw();
+}
+// bar index (fractional) for a timestamp: where in the chart's own bars this moment falls
+function exIndexAt(ts) {
+  const b = ex.data.bars, bar = ex.data.bar;
+  let lo = 0, hi = b.length - 1;
+  if (!b.length || ts < b[0][0]) return null;
+  while (lo < hi) { const mid = (lo + hi + 1) >> 1; if (b[mid][0] <= ts) lo = mid; else hi = mid - 1; }
+  if (lo === b.length - 1 && ts > b[lo][0] + bar) return lo + 0.5 + (ts - b[lo][0] - bar) / bar;  // later today
+  const frac = Math.min(1, (ts - b[lo][0]) / bar);
+  return lo - 0.5 + frac;
+}
+
+const exCv = $("exCanvas"), exCtx = exCv.getContext("2d");
+let exGeo = null;
+function exDraw() {
+  if (!ex.open) return;
+  const ctx = exCtx, dpr = window.devicePixelRatio || 1;
+  const W = exCv.clientWidth, H = exCv.clientHeight;
+  exCv.width = W * dpr; exCv.height = H * dpr; ctx.setTransform(dpr, 0, 0, dpr, 0, 0); ctx.clearRect(0, 0, W, H);
+  const d = ex.data; if (!d || !d.bars.length) return;
+  const C = { fg: css("--fg"), muted: css("--muted"), grid: css("--grid"), up: css("--candle-up"), dn: css("--candle-dn"), win: css("--win"), winS: css("--win-soft"),
+    loss: css("--loss"), lossS: css("--loss-soft"), accent: css("--accent"), wait: css("--wait"), panel: css("--panel"), range: css("--range") };
+  const padL = 8, padR = W < 520 ? 58 : 70, padT = 22, padB = 30;
+  const plotW = W - padL - padR, plotH = H - padT - padB;
+  const X = (i) => padL + (i - ex.from) / (ex.to - ex.from) * plotW;
+  const b = d.bars, i0 = Math.max(0, Math.floor(ex.from)), i1 = Math.min(b.length - 1, Math.ceil(ex.to));
+  if (i1 < i0) return;
+  // live: the forming bar of today, from the live 1-minute feed, when it is the same ticker
+  const lb = (live.sym === ex.sym && d.intraday && ex.iv !== "60") ? exLiveBars() : [];
+  let lo = Infinity, hi = -Infinity;
+  for (let i = i0; i <= i1; i++) { lo = Math.min(lo, b[i][3]); hi = Math.max(hi, b[i][2]); }
+  lb.forEach((x) => { lo = Math.min(lo, x[3]); hi = Math.max(hi, x[2]); });
+  const plan = ex.show.plan && analysis && analysis.symbol === ex.sym && analysis.plan && d.intraday ? analysis.plan : null;
+  if (plan) { const pi = exIndexAt(plan.entry_t); if (pi != null && pi >= ex.from - 50) { lo = Math.min(lo, plan.stop); hi = Math.max(hi, plan.target); } }
+  const pad = (hi - lo) * 0.06 || 1; lo -= pad; hi += pad;
+  const Y = (v) => padT + (hi - v) / (hi - lo) * plotH;
+  exGeo = { X, Y, padL, padR, padT, padB, W, H, plotW, lo, hi };
+  const bw = Math.max(1, plotW / (ex.to - ex.from));
+
+  ctx.save(); ctx.beginPath(); ctx.rect(padL, padT - 16, plotW, plotH + 16); ctx.clip();
+  // grid + price axis
+  ctx.font = `11px ${css("--f-num")}`; ctx.textBaseline = "middle";
+  const step = niceStep((hi - lo) / 6);
+  for (let v = Math.ceil(lo / step) * step; v <= hi; v += step) { ctx.strokeStyle = C.grid; ctx.lineWidth = 1; exLine(padL, Y(v), W - padR, Y(v)); }
+  // day / month separators
+  let lastK = null;
+  for (let i = i0; i <= i1; i++) {
+    const k = d.intraday ? dayKey(b[i][0]) : dayKey(b[i][0]).slice(0, 7);
+    if (lastK !== null && k !== lastK) {
+      ctx.strokeStyle = C.grid; ctx.lineWidth = 1; ctx.setLineDash([2, 3]); exLine(X(i - 0.5), padT - 16, X(i - 0.5), padT + plotH); ctx.setLineDash([]);
+      if (bw * 10 > 40 || !d.intraday || (ex.to - ex.from) < 2000) { ctx.fillStyle = C.muted; ctx.font = `10.5px ${css("--f-ui")}`; ctx.textBaseline = "top"; ctx.fillText(d.intraday ? fmtDate(b[i][0]) : new Intl.DateTimeFormat("de-DE", { month: "short", year: "2-digit", timeZone: "America/New_York" }).format(b[i][0] * 1000), X(i - 0.5) + 3, padT - 15); ctx.textBaseline = "middle"; }
+    }
+    lastK = k;
+  }
+  // past signals (rule on the signal bar length), as small position boxes
+  if (ex.show.sig && ex.sig && d.intraday) {
+    for (const s of ex.sig.signals) {
+      const a = exIndexAt(s.entry_t), z = exIndexAt(s.exit_t);
+      if (a == null || z == null || z < ex.from || a > ex.to) continue;
+      const xa = X(a), xz = Math.max(X(z), xa + 2);
+      ctx.fillStyle = C.winS; ctx.fillRect(xa, Y(s.target), xz - xa, Y(s.entry) - Y(s.target));
+      ctx.fillStyle = C.lossS; ctx.fillRect(xa, Y(s.entry), xz - xa, Y(s.stop) - Y(s.entry));
+      ctx.strokeStyle = s.r >= 0 ? C.win : C.loss; ctx.lineWidth = 1; ctx.strokeRect(xa, Y(s.target), xz - xa, Y(s.stop) - Y(s.target));
+      if (xz - xa > 26) { ctx.fillStyle = s.r >= 0 ? C.win : C.loss; ctx.font = `700 10.5px ${css("--f-num")}`; ctx.textBaseline = "bottom"; ctx.fillText(sgn(s.r, 1) + "R", xa + 2, Y(s.target) - 1); ctx.textBaseline = "middle"; }
+    }
+  }
+  // daily bars: one marker under the day's candle per past signal, coloured by its result
+  if (ex.show.sig && ex.sig && !d.intraday) {
+    for (const s of ex.sig.signals) {
+      const a = exIndexAt(s.entry_t); if (a == null) continue;
+      const i = Math.round(a); if (i < i0 || i > i1) continue;
+      const x = X(i), y = Y(b[i][3]) + 6;
+      ctx.fillStyle = s.r >= 0 ? C.win : C.loss; ctx.beginPath(); ctx.moveTo(x, y); ctx.lineTo(x - 4, y + 7); ctx.lineTo(x + 4, y + 7); ctx.closePath(); ctx.fill();
+    }
+  }
+  // today's plan from the app
+  if (plan) {
+    const a = exIndexAt(plan.entry_t), z = exIndexAt(analysis.result ? analysis.result.exit_t : plan.end_t);
+    if (a != null) {
+      const xa = X(a), xz = X(z);
+      ctx.fillStyle = C.winS; ctx.fillRect(xa, Y(plan.target), xz - xa, Y(plan.entry) - Y(plan.target));
+      ctx.fillStyle = C.lossS; ctx.fillRect(xa, Y(plan.entry), xz - xa, Y(plan.stop) - Y(plan.entry));
+      ctx.lineWidth = 1.5; ctx.strokeStyle = C.win; ctx.strokeRect(xa, Y(plan.target), xz - xa, Y(plan.entry) - Y(plan.target));
+      ctx.strokeStyle = C.loss; ctx.strokeRect(xa, Y(plan.entry), xz - xa, Y(plan.stop) - Y(plan.entry)); ctx.lineWidth = 1;
+      ctx.fillStyle = C.win; ctx.font = `700 11px ${css("--f-ui")}`; ctx.textBaseline = "top";
+      if (xz - xa > 90) ctx.fillText("Heute: " + analysis.decision.action, xa + 5, Y(plan.target) + 4);
+      ctx.textBaseline = "middle";
+    }
+  }
+  // indicators
+  const ind = (k, color, dash) => {
+    ctx.strokeStyle = color; ctx.lineWidth = 1.3; ctx.setLineDash(dash); ctx.beginPath(); let pen = false, lastD = null;
+    for (let i = i0; i <= i1; i++) {
+      const v = b[i][k]; if (v == null) { pen = false; continue; }
+      const dk = k === 6 ? dayKey(b[i][0]) : null;
+      if (dk !== lastD) pen = false; lastD = dk;  // VWAP restarts every morning
+      const x = X(i), y = Y(v); pen ? ctx.lineTo(x, y) : ctx.moveTo(x, y); pen = true;
+    }
+    ctx.stroke(); ctx.setLineDash([]); ctx.lineWidth = 1;
+  };
+  if (ex.show.vwap && d.intraday) ind(6, C.wait, []);
+  if (ex.show.ema) ind(7, C.muted, [3, 3]);
+  // candles (thin lines when zoomed far out)
+  for (let i = i0; i <= i1; i++) {
+    const [, o, h, l, c] = b[i], x = X(i), up = c >= o;
+    ctx.strokeStyle = ctx.fillStyle = up ? C.up : C.dn;
+    if (bw < 2.5) { exLine(x, Y(h), x, Y(l)); continue; }
+    exLine(x, Y(h), x, Y(l));
+    const w = Math.max(1, bw * 0.66), y1 = Y(Math.max(o, c)), y2 = Y(Math.min(o, c));
+    ctx.fillRect(x - w / 2, y1, w, Math.max(1, y2 - y1));
+  }
+  lb.forEach((x, k) => {
+    const i = b.length + k, xx = X(i), up = x[4] >= x[1];
+    ctx.strokeStyle = up ? C.up : C.dn; exLine(xx, Y(x[2]), xx, Y(x[3]));
+    const w = Math.max(2, bw * 0.66), y1 = Y(Math.max(x[1], x[4])), y2 = Y(Math.min(x[1], x[4]));
+    ctx.fillStyle = C.panel; ctx.fillRect(xx - w / 2, y1, w, Math.max(1, y2 - y1)); ctx.strokeRect(xx - w / 2, y1, w, Math.max(1, y2 - y1));
+  });
+  // your trades
+  if (ex.show.mine && d.intraday && mine.doc) {
+    for (const t of mine.doc.trades.filter((t) => t.symbol === ex.sym)) {
+      const a = exIndexAt(t.entry_ts); if (a == null || a < ex.from || a > ex.to) continue;
+      const xa = X(a), ya = Y(t.entry);
+      ctx.fillStyle = C.accent; ctx.beginPath(); ctx.moveTo(xa, ya - 2); ctx.lineTo(xa - 6, ya + 9); ctx.lineTo(xa + 6, ya + 9); ctx.closePath(); ctx.fill();
+      if (t.exit_ts) { const z = exIndexAt(t.exit_ts); if (z != null) { ctx.fillStyle = (t.r || 0) >= 0 ? C.win : C.loss; ctx.beginPath(); ctx.arc(X(z), Y(t.exit), 5, 0, 7); ctx.fill(); } }
+    }
+  }
+  ctx.restore();
+  // price axis labels (outside clip)
+  ctx.font = `11px ${css("--f-num")}`; ctx.textBaseline = "middle";
+  for (let v = Math.ceil(lo / step) * step; v <= hi; v += step) { ctx.fillStyle = C.muted; ctx.fillText(v.toFixed(step < 1 ? 2 : 0), W - padR + 6, Y(v)); }
+  const lastPx = lb.length ? lb[lb.length - 1][4] : b[b.length - 1][4];
+  exTag(W - padR, Y(lastPx), f2(lastPx), C.accent);
+  // time axis: a label about every 90 px
+  ctx.textBaseline = "top"; ctx.textAlign = "center"; ctx.fillStyle = C.muted;
+  const withDate = d.intraday && (ex.to - ex.from) > 300 && ex.iv !== "1";
+  const every = Math.max(1, Math.ceil((withDate ? 120 : !d.intraday ? 80 : 64) / bw));  // room for each label
+  for (let i = Math.ceil(i0 / every) * every; i <= i1; i += every) {
+    const ts = b[i][0];
+    if (X(i) < padL + 40 || X(i) > W - padR - 40) continue;  // no half-cut labels at the edges
+    ctx.fillText(!d.intraday ? fmtDate(ts, true) : withDate ? fmtDate(ts) + " " + fmtET(ts) : fmtET(ts), X(i), H - padB + 8);
+  }
+  ctx.textAlign = "start";
+  // crosshair
+  const hv = ex.hover;
+  if (hv) {
+    ctx.strokeStyle = C.muted; ctx.setLineDash([3, 3]); exLine(hv.x, padT, hv.x, padT + plotH); exLine(padL, hv.y, W - padR, hv.y); ctx.setLineDash([]);
+    exTag(W - padR, hv.y, f2(lo + (padT + plotH - hv.y) / plotH * (hi - lo)), C.muted);
+  }
+}
+function exLine(x1, y1, x2, y2) { exCtx.beginPath(); exCtx.moveTo(x1, y1); exCtx.lineTo(x2, y2); exCtx.stroke(); }
+function exTag(x, y, text, color) {
+  const ctx = exCtx; ctx.font = `600 10.5px ${css("--f-num")}`; const w = ctx.measureText(text).width + 8;
+  ctx.fillStyle = color; ctx.fillRect(x + 2, y - 8, Math.min(w, exGeo.padR - 2), 16);
+  ctx.fillStyle = css("--panel"); ctx.textBaseline = "middle"; ctx.fillText(text, x + 6, y, exGeo.padR - 8);
+}
+function exLiveBars() {
+  const d = ex.data, bar = d.bar, lastT = d.bars[d.bars.length - 1][0];
+  const slots = new Map();
+  [...live.m1.values()].sort((x, y) => x[0] - y[0]).forEach((c) => {
+    const st = lastT + Math.floor((c[0] - lastT) / bar) * bar;
+    if (st <= lastT) return;
+    const v = slots.get(st);
+    if (!v) slots.set(st, [st, c[1], c[2], c[3], c[4], c[5]]);
+    else { v[2] = Math.max(v[2], c[2]); v[3] = Math.min(v[3], c[3]); v[4] = c[4]; v[5] += c[5]; }
+  });
+  return [...slots.values()].slice(0, 3);
+}
+// mouse, wheel, touch
+let exDrag = null;
+exCv.addEventListener("wheel", (e) => { e.preventDefault(); if (!exGeo) return; const r = exCv.getBoundingClientRect(); exZoom(e.deltaY > 0 ? 1.15 : 0.87, Math.min(1, Math.max(0, (e.clientX - r.left - exGeo.padL) / exGeo.plotW))); }, { passive: false });
+exCv.addEventListener("pointerdown", (e) => { exDrag = { x: e.clientX, from: ex.from }; exCv.setPointerCapture(e.pointerId); });
+exCv.addEventListener("pointerup", () => { exDrag = null; });
+exCv.addEventListener("pointermove", (e) => {
+  if (!exGeo || !ex.data) return;
+  const r = exCv.getBoundingClientRect(), x = e.clientX - r.left, y = e.clientY - r.top;
+  if (exDrag && e.buttons) {
+    const span = ex.to - ex.from, dx = -(e.clientX - exDrag.x) / exGeo.plotW * span;
+    ex.from = exDrag.from + dx; ex.to = ex.from + span; ex.hover = null; exDraw(); return;
+  }
+  ex.hover = { x, y };
+  const i = Math.round(ex.from + (x - exGeo.padL) / exGeo.plotW * (ex.to - ex.from));
+  const b = ex.data.bars[i];
+  let txt = b ? `${ex.data.intraday ? fmtDate(b[0], true) + " " + fmtET(b[0]) + " ET" : fmtDate(b[0], true)} · O ${f2(b[1])} H ${f2(b[2])} L ${f2(b[3])} C ${f2(b[4])}${b[6] != null ? " · VWAP " + f2(b[6]) : ""}` : "";
+  if (b && ex.sig && ex.show.sig) {
+    const s = ex.sig.signals.find((s) => ex.data.intraday ? (s.entry_t - ex.data.bar < b[0] + ex.data.bar && s.exit_t >= b[0]) : s.date === dayKey(b[0]));
+    if (s) txt += ` · Signal ${s.date}: Kauf ${f2(s.entry)}, Stop ${f2(s.stop)}, Ziel ${f2(s.target)} → ${({ stop: "Stop", target: "Ziel", flat: "glattgestellt" })[s.outcome]} ${sgn(s.r)}R`;
+  }
+  $("exInfo").textContent = txt || "";
+  exDraw();
+});
+exCv.addEventListener("pointerleave", () => { ex.hover = null; exInfoDefault(); exDraw(); });
+exCv.addEventListener("dblclick", () => { exSetRange(ex.iv === "D" ? "130" : "5"); exDraw(); });
+let exPinch = null;
+exCv.addEventListener("touchstart", (e) => { if (e.touches.length === 2) exPinch = { d: Math.abs(e.touches[0].clientX - e.touches[1].clientX), span: ex.to - ex.from, from: ex.from }; }, { passive: true });
+exCv.addEventListener("touchmove", (e) => {
+  if (e.touches.length !== 2 || !exPinch) return;
+  e.preventDefault();
+  const dd = Math.abs(e.touches[0].clientX - e.touches[1].clientX) || 1, ns = exPinch.span * exPinch.d / dd;
+  const c = exPinch.from + exPinch.span / 2; ex.from = c - ns / 2; ex.to = c + ns / 2; exDraw();
+}, { passive: false });
+exCv.addEventListener("touchend", () => { exPinch = null; });
+window.addEventListener("resize", () => exDraw());
+
+$("exOpenBtn").onclick = () => openExplorer(current);
 
 /* ------------------------------------------------ bar length */
 function markTF(m) { $("tf").querySelectorAll("button").forEach((b) => b.setAttribute("aria-pressed", String(+b.dataset.m === +m))); }

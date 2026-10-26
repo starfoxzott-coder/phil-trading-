@@ -48,6 +48,27 @@ Indikatoren (ATR, EMA, RSI pro Kerze), Simulation, Backtest und die gelernte Reg
 - Deine eigenen Trades merken sich, mit welcher Kerzenlänge du gehandelt hast. Ein offen
   gelassener Trade wird mit 1-Minuten-Daten abgerechnet, solange Yahoo sie noch hat.
 
+## Interaktives Chart-Fenster
+
+Der Knopf **„⤢ Interaktives Chart“** oben rechts im Chart öffnet ein großes Fenster:
+
+- **Chart-Kerzen**: 1, 2, 5, 15, 30 Minuten, 1 Stunde oder Tag. Das ist nur die Ansicht; sie
+  wird im Browser gemerkt.
+- **Vorschläge**: die Kerzenlänge, auf der die App ihre Signale, Stops und Ziele berechnet
+  (dieselbe Einstellung wie oben in der Kopfzeile). Beide sind unabhängig: Du kannst dir
+  Tageskerzen ansehen und trotzdem auf 5-Minuten-Kerzen handeln.
+- **Zeitraum**: 1 / 5 / 20 Tage oder alles (bei Tageskerzen 3 Monate bis 2 Jahre). Weiter
+  zurück: mit dem Mausrad zoomen (Handy: zwei Finger), ziehen zum Verschieben, Pfeiltasten,
+  Doppelklick setzt zurück. Historie: 1 Min etwa 20 Tage, 2 Min etwa 30, 5 bis 30 Min 60 Tage,
+  1 Stunde und Tag 2 Jahre.
+- **Vergangene Signale**: jeder frühere Tag, an dem die aktuelle Regel (für die eingestellte
+  Vorschlags-Kerzenlänge) gekauft hätte, als kleine grün-rote Box mit Ergebnis in R. Bei
+  Tageskerzen als Dreieck unter der Kerze. Darüber fahren zeigt Kauf, Stop, Ziel und Ausgang.
+  Diese Boxen nutzen den Stop und das Ziel der Regel; die Feinabstimmung pro Trade läuft nur für
+  heute.
+- Dazu der heutige Plan, deine eigenen Trades, VWAP und EMA 20 (einzeln abschaltbar), die
+  laufende Kerze live und ein Fadenkreuz mit Kurs und Uhrzeit.
+
 ## Echtzeit und Zusatzdaten
 
 - **Live-Kerzen**: Während der Börsenzeit verbindet sich der Browser per WebSocket mit
@@ -187,6 +208,7 @@ Erst handeln, wenn das Journal über Wochen positiv ist, und dann klein.
 - `liquid.py`: Hyperliquid-Live-Daten (Kerzen, Funding, Open Interest) und Liquid-Positionierung
 - `trades.py`: deine eigenen Trades, Bilder, erkannte Fehler, persönliche Regeln
 - `claude_review.py`: optionale Bildauswertung und Trade-Bewertung durch Claude
+- `chartdata.py`: Daten für das Chart-Fenster (lange Historie, vergangene Signale)
 - `server.py`: Web-Server und Kommandozeile
 - `web/index.html`: Oberfläche mit Chart
 - `data/intel.json`: Liquid-Positionierung, von Claude geschrieben

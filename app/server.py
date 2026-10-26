@@ -28,6 +28,7 @@ import engine  # noqa: E402
 import learn  # noqa: E402
 import liquid  # noqa: E402
 import trades  # noqa: E402
+import chartdata  # noqa: E402
 
 WEB = os.path.join(os.path.dirname(os.path.abspath(__file__)), "web")
 ORDER = {"KAUFEN": 0, "LÄUFT": 1, "WARTEN": 1, "BEOBACHTEN": 2, "VORBEI": 3, "KEIN TRADE": 4}
@@ -238,6 +239,10 @@ class Handler(BaseHTTPRequestHandler):
             return self._guard(state)
         if u.path == "/api/trades":
             return self._guard(trades_state)
+        if u.path == "/api/chart":
+            return self._guard(lambda: chartdata.chart(q.get("symbol", "SPY"), q.get("iv", "5")))
+        if u.path == "/api/past-signals":
+            return self._guard(lambda: chartdata.past_signals(q.get("symbol", "SPY")))
         if u.path.startswith("/shots/"):
             p = trades.shot_path(u.path[len("/shots/"):])
             if not p:
