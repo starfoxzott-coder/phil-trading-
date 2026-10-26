@@ -1,5 +1,5 @@
 {
-  "_comment": "Die App liest und schreibt diese Datei. learn.py ändert params, min_ev_r und blocked_symbols; account, rules und watchlist sind deine Einstellungen. cost_bps = Kosten (Spread + Slippage) pro Seite in Basispunkten; min_quality = schlechteste Qualitätsstufe, die noch gehandelt wird (A, B oder C).",
+  "_comment": "Die App liest und schreibt diese Datei. rules.bar_minutes = Kerzenlänge (1, 2, 5, 15, 30). Was die Lernschleife ändert (params, min_ev_r, blocked_symbols), steht je Kerzenlänge unter by_interval; account, rules und watchlist sind deine Einstellungen. cost_bps = Kosten (Spread + Slippage) pro Seite in Basispunkten; min_quality = schlechteste Qualitätsstufe, die noch gehandelt wird (A, B oder C).",
   "watchlist": [
     "SPY",
     "QQQ",
@@ -12,15 +12,8 @@
     "AMZN",
     "GOOGL"
   ],
-  "params": {
-    "or_minutes": 15,
-    "stop": "or-mid",
-    "target_r": 2.0,
-    "vol_x": 0,
-    "trend": "none"
-  },
-  "blocked_symbols": {},
   "rules": {
+    "bar_minutes": 5,
     "no_entries_before": "09:45",
     "no_entries_after": "15:30",
     "flat_by": "15:55",
@@ -37,7 +30,19 @@
     "max_trades_per_day": 3,
     "daily_loss_limit_usd": 150
   },
-  "generation": 0,
-  "learned_at": null,
-  "min_ev_r": 0.1
+  "by_interval": {
+    "5": {
+      "params": {
+        "or_minutes": 15,
+        "stop": "or-mid",
+        "target_r": 2.0,
+        "vol_x": 0,
+        "trend": "none"
+      },
+      "min_ev_r": 0.1,
+      "blocked_symbols": {},
+      "generation": 0,
+      "learned_at": null
+    }
+  }
 }

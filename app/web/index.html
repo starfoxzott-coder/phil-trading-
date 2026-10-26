@@ -151,6 +151,12 @@ select { font: inherit; padding: 6px 9px; border: 1px solid var(--line); border-
 .acts { display: flex; flex-wrap: wrap; gap: 6px; margin-top: 10px }
 .acts .btn { font-size: 12.5px; padding: 5px 10px }
 .danger { color: var(--loss) !important }
+.tf { display: inline-flex; align-items: center; gap: 2px; padding: 2px; border: 1px solid var(--line); border-radius: 7px; background: var(--panel) }
+.tf span { font-size: 11px; color: var(--muted); padding: 0 6px; letter-spacing: .04em; text-transform: uppercase; font-weight: 700 }
+.tf button { border: 0; background: none; color: var(--muted); font: 600 12.5px var(--f-num); padding: 4px 8px; border-radius: 5px }
+.tf button[aria-pressed="true"] { background: var(--accent); color: #fff }
+.tf button:disabled { opacity: .5; cursor: progress }
+.tfinfo { font-size: 12px; color: var(--muted) }
 .closeform { margin-top: 12px; border-top: 1px solid var(--line); padding-top: 12px }
 .tags { border: 0; padding: 0; margin: 10px 0 0; display: flex; flex-wrap: wrap; gap: 4px 14px; font-size: 12.5px }
 .tags legend { font-size: 12px; color: var(--muted); margin-bottom: 4px; padding: 0 }
@@ -186,6 +192,8 @@ td { padding: 6px 8px; border-bottom: 1px solid var(--line); vertical-align: top
   <div class="brand">Phil <small>Day-Trade</small></div>
   <span class="pill" id="mkt"><span class="dot"></span><span>…</span></span>
   <span class="clock num" id="clock"></span>
+  <div class="tf" role="group" aria-label="Kerzenlänge" id="tf"><span>Kerzen</span>
+    <button data-m="1" aria-pressed="false">1</button><button data-m="2" aria-pressed="false">2</button><button data-m="5" aria-pressed="true">5</button><button data-m="15" aria-pressed="false">15</button><button data-m="30" aria-pressed="false">30</button><span>Min</span></div>
   <span class="spacer"></span>
   <nav class="tabs" role="tablist">
     <button role="tab" id="tab-desk" aria-selected="true">Trading</button>
@@ -308,16 +316,26 @@ async function api(path, body) {
   if (!r.ok) throw new Error(j.error || r.statusText);
   return j;
 }
-function demoApi(path) {
-  if (path.startsWith("/api/analyze")) { const s = new URLSearchParams(path.split("?")[1]).get("symbol"); const a = DEMO.analyses[s]; if (!a) throw new Error("Im Demo-Schnappschuss nur die Watchlist-Ticker"); return a; }
-  if (path === "/api/scan") return DEMO.scan;
-  if (path === "/api/state") return DEMO.state;
+function demoApi(path, body) {
+  const V = (DEMO.by && DEMO.by[DEMO.active]) || DEMO;  // snapshot per bar length
+  if (path === "/api/settings" && body && body.rules && body.rules.bar_minutes && DEMO.by && DEMO.by[body.rules.bar_minutes]) { DEMO.active = body.rules.bar_minutes; return {}; }
+  if (path.startsWith("/api/analyze")) { const s = new URLSearchParams(path.split("?")[1]).get("symbol"); const a = V.analyses[s]; if (!a) throw new Error("Im Demo-Schnappschuss nur die Watchlist-Ticker"); return a; }
+  if (path === "/api/scan") return V.scan;
+  if (path === "/api/state") return V.state;
   if (path === "/api/learn") return DEMO.learn;
   if (path === "/api/trades") return DEMO.trades || { trades: [], summary: { n: 0, open: 0, rules: [], mistakes: [] }, mistakes: {}, claude: false };
   throw new Error("Im Demo-Modus nicht verfügbar – starte die App lokal");
 }
 
 /* ------------------------------------------------ watchlist */
+const BAR = () => (analysis && analysis.bar) || 300;
+const TF_INFO = {
+  1: "Viele, schnelle Signale; nur etwa 20 Handelstage Historie, Spread kostet mehr Anteil",
+  2: "Schneller als 5 Min; etwa 30 Handelstage Historie",
+  5: "Standard: guter Kompromiss aus Tempo und Historie (60 Tage)",
+  15: "Ruhiger, weniger Fehlausbrüche, dafür weniger Signale (60 Tage)",
+  30: "Sehr ruhig, wenige Signale; Spanne mindestens 30 Min (60 Tage)",
+};
 const KIND = { "KAUFEN": "buy", "LÄUFT": "run", "WARTEN": "wait", "BEOBACHTEN": "watch", "VORBEI": "done", "KEIN TRADE": "no", "FEHLER": "err" };
 const kind = (a) => KIND[a] || "no";
 function chipClass(a) { return "c-" + kind(a); }
@@ -431,7 +449,8 @@ function renderChecks() {
   const a = analysis, box = $("checkBox");
   if (!a.checks) { box.innerHTML = `<p class="muted">${a.opening_range ? "Kein handelbarer Plan heute." : "Die Eröffnungsspanne bildet sich noch. Ab " + fmtET(a.session_open + a.params.or_minutes * 60) + " ET steht der Plan."}</p>`; return; }
   const q = a.quality;
-  const head = `<div style="display:flex;gap:12px;align-items:center;margin-bottom:12px"><span class="grade ${q.grade}">${q.grade}</span>
+  const head = `<p class="tfinfo" style="margin:0 0 10px">${a.bar_minutes}-Minuten-Kerzen · ${a.history_days} Handelstage Historie · ${esc(TF_INFO[a.bar_minutes] || "")}</p>
+    <div style="display:flex;gap:12px;align-items:center;margin-bottom:12px"><span class="grade ${q.grade}">${q.grade}</span>
     <div><b>Qualität ${q.grade}</b> · ${q.soft_ok} von ${q.soft_known} Zusatzkriterien erfüllt<br><span class="muted" style="font-size:12px">Gehandelt wird ab Qualität ${q.min}, wenn alle Pflichtpunkte stimmen.</span></div></div>`;
   box.innerHTML = head + `<ul class="checks">${a.checks.map((c) => `<li><span class="ic ${c.ok === true ? "y" : c.ok === false ? "n" : "u"}">${c.ok === true ? "✓" : c.ok === false ? "✗" : "?"}</span>
     <span>${esc(c.label)}${c.hard ? '<span class="hard">Pflicht</span>' : ""}</span><small>${esc(c.detail || "")}</small></li>`).join("")}</ul>
@@ -442,7 +461,7 @@ function renderOrder() {
   if (!p || !o || !s) { box.innerHTML = `<p class="muted">Kein Plan.</p>`; return; }
   const act = a.decision.action;
   const intro = act === "KAUFEN" ? `<p style="margin:0 0 10px"><b class="pos">Jetzt gültig.</b> Drei Orders, am besten als Bracket-Order:</p>`
-    : act === "WARTEN" ? `<p style="margin:0 0 10px"><b style="color:var(--wait)">Vorbereitet.</b> Erst wenn eine 5-Min-Kerze über ${f2(a.opening_range.high)} schließt:</p>`
+    : act === "WARTEN" ? `<p style="margin:0 0 10px"><b style="color:var(--wait)">Vorbereitet.</b> Erst wenn eine ${a.bar_minutes}-Min-Kerze über ${f2(a.opening_range.high)} schließt:</p>`
     : act === "LÄUFT" ? `<p style="margin:0 0 10px">Nur wenn du schon drin bist: Stop und Ziel so lassen.</p>`
     : `<p style="margin:0 0 10px" class="muted">Heute nicht handeln. Zur Info, so sähe der Plan aus:</p>`;
   box.innerHTML = intro + `<ol class="steps">
@@ -477,7 +496,7 @@ function renderContext() {
   const a = analysis, i = a.indicators || {}, pp = a.perp, q = a.intel;
   const pct = (x) => (x * 100).toFixed(0) + " %";
   let h = `<dl class="kv"><dt>VWAP heute</dt><dd class="${i.above_vwap ? "pos" : "neg"}">${f2(i.vwap)} ${i.above_vwap ? "Kurs drüber" : "Kurs drunter"}</dd>
-    <dt>EMA 20 (5 Min)</dt><dd class="${i.above_ema ? "pos" : "neg"}">${f2(i.ema20)}</dd>
+    <dt>EMA 20 (${a.bar_minutes}-Min-Kerzen)</dt><dd class="${i.above_ema ? "pos" : "neg"}">${f2(i.ema20)}</dd>
     <dt>RSI 14</dt><dd>${i.rsi14 ?? "–"}${i.rsi14 >= 70 ? " überkauft" : i.rsi14 <= 30 ? " überverkauft" : ""}</dd>
     <dt>ATR 14 (Schwankung je Kerze)</dt><dd>${i.atr14 ?? "–"}</dd>`;
   if (pp) h += `<dt>Perp ${esc(pp.coin)}${pp.same_instrument ? "" : " (Index)"}</dt><dd>${pp.same_instrument ? f2(pp.mark) : pp.mark.toFixed(1)}</dd>
@@ -507,7 +526,7 @@ function liveTick() {
   if (live.raf) return;
   live.raf = requestAnimationFrame(() => {
     live.raf = 0; drawChart();
-    const slot = Math.floor(Date.now() / 300000) * 300;
+    const slot = Math.floor(Date.now() / 1000 / BAR()) * BAR();
     if (live.slot && slot !== live.slot) { // a 5-minute candle just closed: re-run the call once Yahoo has it
       const sym = current; setTimeout(() => sym === current && refresh(), 20000); setTimeout(() => sym === current && refresh(), 75000);
     }
@@ -546,10 +565,11 @@ function startLive() {
 // 5-minute candles built from the live 1-minute ones, for slots Yahoo has not closed yet
 function liveBars() {
   const a = analysis; if (!a || !live.m1.size || live.sym !== a.symbol || !a.market_open) return [];
-  const lastT = a.bars.length ? a.bars[a.bars.length - 1][0] : a.session_open - 300;
+  const bar = BAR();
+  const lastT = a.bars.length ? a.bars[a.bars.length - 1][0] : a.session_open - bar;
   const slots = new Map();
   [...live.m1.values()].sort((x, y) => x[0] - y[0]).forEach((c) => {
-    const st = Math.floor(c[0] / 300) * 300;
+    const st = Math.floor(c[0] / bar) * bar;
     if (st <= lastT || st < a.session_open || st >= a.session_end) return;
     const b = slots.get(st);
     if (!b) slots.set(st, [st, c[1], c[2], c[3], c[4], c[5]]);
@@ -616,7 +636,7 @@ function drawChart() {
     ctx.fillText("Vortageshoch " + f2(a.prev_high), W - padR - 4, Y(a.prev_high) - 2); ctx.textAlign = "start"; ctx.textBaseline = "middle";
   }
   // the position box
-  const bw = (X(t0 + 300) - X(t0));
+  const bw = (X(t0 + BAR()) - X(t0));
   if (p) {
     const xa = X(p.entry_t), xb = X(p.end_t);
     const res = a.result;
@@ -651,7 +671,7 @@ function drawChart() {
 
   // time machine fan (median line + 25–75 band)
   if (s && s.fan.length && !a.result) {
-    const pts = s.fan.map((f) => [X(t0 + f.slot * 300 + 300), f]);
+    const pts = s.fan.map((f) => [X(t0 + f.slot * BAR() + BAR()), f]);
     ctx.fillStyle = C.fan; ctx.beginPath();
     pts.forEach(([x, f], i) => (i ? ctx.lineTo(x, Y(f.p75)) : ctx.moveTo(x, Y(f.p75))));
     for (let i = pts.length - 1; i >= 0; i--) ctx.lineTo(pts[i][0], Y(pts[i][1].p25));
@@ -705,7 +725,7 @@ function drawChart() {
   if (a.live && lp == null) { ctx.setLineDash([2, 2]); ctx.strokeStyle = C.muted; line(padL, Y(last[4]), W - padR, Y(last[4])); ctx.setLineDash([]); }
   // live breakout watch: price above the range high, confirmation only at the candle close
   if (a.decision.state === "waiting" && lp != null && a.opening_range && lp > a.opening_range.high) {
-    const slotEnd = Math.floor(Date.now() / 300000) * 300 + 300;
+    const slotEnd = Math.floor(Date.now() / 1000 / BAR()) * BAR() + BAR();
     ctx.fillStyle = C.wait; ctx.font = `700 12px ${css("--f-ui")}`; ctx.textBaseline = "top";
     ctx.fillText("Kurs über Spannenhoch: Bestätigung erst beim Kerzenschluss " + fmtET(slotEnd) + " ET", padL + 6, padT - 16);
   }
@@ -754,7 +774,7 @@ cv.addEventListener("mousemove", (e) => {
   if (!geo || !analysis) return;
   const r = cv.getBoundingClientRect(), x = e.clientX - r.left;
   const t = geo.t0 + (x - geo.padL) / (geo.W - geo.padL - geo.padR) * (geo.t1 - geo.t0);
-  const b = analysis.bars.concat(liveBars()).find((b) => t >= b[0] && t < b[0] + 300);
+  const b = analysis.bars.concat(liveBars()).find((b) => t >= b[0] && t < b[0] + BAR());
   const tip = $("tip");
   if (!b) { tip.hidden = true; return; }
   tip.hidden = false;
@@ -770,8 +790,9 @@ new MutationObserver(() => drawChart()).observe(document.documentElement, { attr
 async function loadState() {
   stateDoc = await api("/api/state");
   const st = stateDoc.strategy, sc = stateDoc.score;
-  $("ruleNow").textContent = "Regel: " + stateDoc.describe + (st.learned_at ? " · gelernt " + st.learned_at : "");
-  $("lRule").innerHTML = `<p style="font-size:17px;font-weight:700;margin:0 0 8px">${esc(stateDoc.describe)}</p>
+  markTF(st.rules.bar_minutes || 5);
+  $("ruleNow").textContent = (st.rules.bar_minutes || 5) + "-Min-Kerzen · Regel: " + stateDoc.describe + (st.learned_at ? " · gelernt " + st.learned_at : "");
+  $("lRule").innerHTML = `<p class="tfinfo" style="margin:0 0 4px">Für ${st.rules.bar_minutes || 5}-Minuten-Kerzen. Jede Kerzenlänge lernt ihre eigene Regel.</p><p style="font-size:17px;font-weight:700;margin:0 0 8px">${esc(stateDoc.describe)}</p>
     <dl class="kv"><dt>Generation</dt><dd>${st.generation || 0}</dd><dt>Mindest-Erwartung nach Kosten</dt><dd>${sgn(st.min_ev_r ?? 0.1)} R</dd><dt>Mindest-Qualität</dt><dd>${esc(st.rules.min_quality || "B")}</dd>
     <dt>Gesperrte Ticker</dt><dd>${Object.keys(st.blocked_symbols || {}).join(", ") || "keine"}</dd><dt>Zuletzt gelernt</dt><dd>${esc(st.learned_at || "noch nie")}</dd></dl>`;
   $("lScore").innerHTML = sc.n ? `<dl class="kv"><dt>Abgerechnete Signale</dt><dd>${sc.n}</dd><dt>Trefferquote</dt><dd>${(sc.win_rate * 100).toFixed(0)} %</dd>
@@ -784,7 +805,7 @@ async function loadState() {
     ${Object.entries(sc.by_check || {}).map(([k, v]) => `<dt>${esc(CHECK_NAMES[k] || k)}: ja / nein</dt><dd>${v.yes.n ? sgn(v.yes.avg_r) : "–"} / ${v.no.n ? sgn(v.no.avg_r) : "–"} R</dd>`).join("")}
     <dt>Davon selbst gekauft</dt><dd>${sc.taken.n}${sc.taken.n ? " · " + sgn(sc.taken.avg_r) + " R" : ""}</dd></dl>`
     : `<p class="muted">Noch keine abgerechneten Signale. Jedes KAUFEN-Signal wird automatisch mitgeschrieben und nach Handelsschluss abgerechnet, auch wenn du es nicht handelst.</p>`;
-  $("lHist").innerHTML = stateDoc.history.length ? stateDoc.history.map((c) => `<div class="lesson"><b>${esc(c.at)} · Gen. ${c.generation} · ${esc(c.field)}</b><div>${esc(c.why)}</div></div>`).join("") : `<p class="muted">Noch keine Lektion. Die Regel ändert sich erst, wenn eine Variante über mindestens 30 Trades klar besser ist.</p>`;
+  $("lHist").innerHTML = stateDoc.history.length ? stateDoc.history.map((c) => `<div class="lesson"><b>${esc(c.at)} · ${c.bar_minutes || 5}-Min · Gen. ${c.generation} · ${esc(c.field)}</b><div>${esc(c.why)}</div></div>`).join("") : `<p class="muted">Noch keine Lektion. Die Regel ändert sich erst, wenn eine Variante über mindestens 30 Trades klar besser ist.</p>`;
   const j = stateDoc.journal;
   $("lJournal").innerHTML = j.length ? `<table><thead><tr><th>Tag</th><th>Ticker</th><th>Kauf</th><th>Stop</th><th>Ziel</th><th>TM</th><th>Ergebnis</th><th>Gekauft</th></tr></thead><tbody>
     ${j.map((r) => `<tr><td class="num">${r.date}</td><td><b>${esc(r.symbol)}</b></td><td class="num">${f2(r.entry)}</td><td class="num">${f2(r.stop)}</td><td class="num">${f2(r.target)}</td>
@@ -802,7 +823,7 @@ function renderRank() {
     <p class="note">Gewählt wird nach unterer Schranke (Ø R minus Standardfehler), damit ein Glückstreffer die Regel nicht kippt.</p>`;
 }
 const CHECK_NAMES = { hist: "Setup historisch positiv", vwap: "Über VWAP", market: "SPY über VWAP", time: "≥ 90 Min Zeit", rsi: "RSI unter 75", liquid: "Liquid nicht dagegen" };
-const LABELS = { cost_bps: "Kosten pro Seite (Basispunkte)", min_quality: "Mindest-Qualität (A/B/C)", account_usd: "Konto ($)", max_loss_per_trade_usd: "Max. Verlust pro Trade ($)", position_cap_pct: "Max. Position (% Konto)", max_order_usd: "Max. Order ($)",
+const LABELS = { bar_minutes: "Kerzenlänge in Minuten (1, 2, 5, 15, 30)", cost_bps: "Kosten pro Seite (Basispunkte)", min_quality: "Mindest-Qualität (A/B/C)", account_usd: "Konto ($)", max_loss_per_trade_usd: "Max. Verlust pro Trade ($)", position_cap_pct: "Max. Position (% Konto)", max_order_usd: "Max. Order ($)",
   cash_buffer_pct: "Cash-Puffer (%)", max_trades_per_day: "Trades pro Tag", daily_loss_limit_usd: "Tagesverlust-Limit ($)",
   no_entries_before: "Kein Einstieg vor (ET)", no_entries_after: "Kein Einstieg nach (ET)", flat_by: "Glattstellen bis (ET)", min_reward_risk: "Min. Chance/Risiko" };
 function renderSettings(st) {
@@ -1000,6 +1021,19 @@ function bindCards() {
   });
 }
 $("newTradeBtn").onclick = () => openTradeDialog({});
+
+/* ------------------------------------------------ bar length */
+function markTF(m) { $("tf").querySelectorAll("button").forEach((b) => b.setAttribute("aria-pressed", String(+b.dataset.m === +m))); }
+$("tf").querySelectorAll("button").forEach((b) => b.onclick = async () => {
+  if (b.getAttribute("aria-pressed") === "true") return;
+  const btns = $("tf").querySelectorAll("button"); btns.forEach((x) => x.disabled = true);
+  try {
+    await api("/api/settings", { rules: { bar_minutes: +b.dataset.m } });
+    markTF(b.dataset.m); stopLive(); live.sym = null;
+    await loadScan(); if (current) await select(current); loadState();
+  } catch (e) { alertBox(e.message); }
+  btns.forEach((x) => x.disabled = false);
+});
 
 /* ------------------------------------------------ tabs, clock, refresh */
 function show(which) {

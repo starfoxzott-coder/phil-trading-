@@ -44,12 +44,36 @@ BLOCK_BELOW = -0.15       # average R that blocks a symbol
 CALIB_MIN = 10            # settled signals before the edge filter is tuned
 
 
-def load_strategy():
+# What learning changes is kept per bar length: a rule learned on 5-minute
+# candles says nothing about 1-minute ones. The file stores them under
+# "by_interval"; load_strategy() lays the active one over the top level.
+LEARNED = ("params", "min_ev_r", "blocked_symbols", "generation", "learned_at")
+DEFAULT_LEARNED = {"params": {"or_minutes": 15, "stop": "or-mid", "target_r": 2.0, "vol_x": 0, "trend": "none"},
+                   "min_ev_r": 0.10, "blocked_symbols": {}, "generation": 0, "learned_at": None}
+
+
+def bar_minutes(s):
+    return int(s["rules"].get("bar_minutes", 5))
+
+
+def load_strategy(minutes=None):
+    """The strategy with the learned state of `minutes` (default: your chosen bar length)."""
     with open(STRATEGY) as f:
-        return json.load(f)
+        s = json.load(f)
+    by = s.setdefault("by_interval", {})
+    if not by and "params" in s:  # older file: its learned state belongs to 5-minute bars
+        by["5"] = {k: s[k] for k in LEARNED if k in s}
+    m = str(int(minutes) if minutes else bar_minutes(s))
+    s.update(json.loads(json.dumps(DEFAULT_LEARNED)))
+    s.update(json.loads(json.dumps(by.get(m, {}))))
+    s["active_minutes"] = int(m)
+    return s
 
 
 def save_strategy(s):
+    s = dict(s)
+    m = str(s.pop("active_minutes", bar_minutes(s)))
+    s.setdefault("by_interval", {})[m] = {k: s.pop(k) for k in LEARNED if k in s}
     tmp = STRATEGY + ".tmp"
     with open(tmp, "w") as f:
         json.dump(s, f, indent=2, ensure_ascii=False)
@@ -97,7 +121,7 @@ def record_signal(a):
     p = a["plan"]
     row = {"id": "%s-%s" % (a["symbol"], a["date"]), "symbol": a["symbol"], "date": a["date"],
            "entry_t": p["entry_t"], "entry": p["entry"], "stop": p["stop"], "target": p["target"],
-           "risk": p["risk"], "target_r": p["target_r"], "params": a["params"],
+           "risk": p["risk"], "target_r": p["target_r"], "params": a["params"], "bar_minutes": a.get("bar_minutes", 5),
            "p_target_share": (a.get("sim") or {}).get("target_share"),
            "edge_pp": (a.get("sim") or {}).get("edge_pp"),
            "shares": a["size"]["shares"], "loss_at_stop": a["size"]["loss_at_stop"],
@@ -132,7 +156,7 @@ def settle(strategy, now_ts=None):
         if r["status"] != "open":
             continue
         try:
-            sess = engine.sessions(engine.fetch_bars(r["symbol"], "60d", "5m")["bars"], now_ts)
+            sess = engine.sessions(engine.history(r["symbol"], r.get("bar_minutes", 5))["bars"], now_ts)
         except engine.EngineError:
             continue
         day = sess.get(r["date"])
@@ -201,13 +225,14 @@ def _same(a, b):
 def evolve(strategy, watchlist, now_ts=None):
     now_ts = now_ts or time.time()
     rules = strategy["rules"]
+    minutes = strategy["active_minutes"]
     sessions = {}
     for sym in watchlist:
         try:
-            sessions[sym] = engine.sessions(engine.fetch_bars(sym, "60d", "5m")["bars"], now_ts)
+            sessions[sym] = engine.sessions(engine.history(sym, minutes)["bars"], now_ts)
         except engine.EngineError:
             pass
-    live = [r for r in read_journal() if r["status"] == "settled"]
+    live = [r for r in read_journal() if r["status"] == "settled" and r.get("bar_minutes", 5) == minutes]
 
     table = []
     for v in _variants():
@@ -287,9 +312,10 @@ def describe(p):
 
 # ---------------------------------------------------------------- 4. the cycle
 
-def cycle(now_ts=None):
+def cycle(now_ts=None, minutes=None):
+    """One learning cycle for one bar length (default: the one you trade)."""
     import trades
-    strategy = load_strategy()
+    strategy = load_strategy(minutes)
     watchlist = strategy["watchlist"]
     settled = settle(strategy, now_ts)
     mine_closed = trades.settle_open(strategy, engine.et_now(now_ts).date().isoformat())
@@ -301,8 +327,9 @@ def cycle(now_ts=None):
     save_strategy(strategy)
 
     for c in changes:
-        _append(HISTORY, json.dumps(dict(c, at=stamp, generation=strategy["generation"])) + "\n")
-    lines = ["## Lernzyklus %s" % stamp, ""]
+        _append(HISTORY, json.dumps(dict(c, at=stamp, generation=strategy["generation"],
+                                         bar_minutes=strategy["active_minutes"])) + "\n")
+    lines = ["## Lernzyklus %s · %d-Min-Kerzen" % (stamp, strategy["active_minutes"]), ""]
     lines.append("- Abgerechnet: %d Signal(e)" % len(settled))
     for r in settled:
         lines.append("  - %s %s: %s, %+.2fR" % (r["symbol"], r["date"], r["outcome"], r["r"]))
@@ -330,6 +357,14 @@ def cycle(now_ts=None):
     _append(RETROS, "\n".join(lines) + "\n\n")
     return {"settled": settled, "changes": changes, "ranking": ranking, "current": current,
             "score": sc, "strategy": strategy}
+
+
+def intervals_in_use():
+    """Bar lengths worth a nightly cycle: the one you trade plus any with learned state."""
+    with open(STRATEGY) as f:
+        s = json.load(f)
+    used = {bar_minutes(s)} | {int(m) for m in s.get("by_interval", {})}
+    return sorted(m for m in used if m in engine.BAR_MINUTES)
 
 
 def history():

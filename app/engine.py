@@ -31,11 +31,22 @@ import urllib.request
 
 UA = "Mozilla/5.0 (phil-daytrade-app)"
 HOSTS = ("query2", "query1")
-BAR = 300  # seconds in a 5-minute bar
+BAR = 300  # default bar: 5 minutes. Every bar dict carries its own length in "d" (seconds)
 OPEN_MIN = 9 * 60 + 30
 CLOSE_MIN = 16 * 60
-FULL_BARS = 78
-FRESH_SECONDS = 600  # a trigger is a buy only while its bar closed in the last 10 minutes
+FULL_BARS = 78  # 5-minute bars in a full session; full_bars() for other lengths
+FRESH_SECONDS = 600  # 5-minute bars: a trigger is a buy for 10 minutes; fresh_seconds() scales it
+BAR_MINUTES = (1, 2, 5, 15, 30)
+STEP = {"1m": 60, "2m": 120, "5m": 300, "15m": 900, "30m": 1800}
+
+
+def full_bars(d):
+    return (CLOSE_MIN - OPEN_MIN) * 60 // d
+
+
+def fresh_seconds(d):
+    """How long after its bar closes a breakout still counts as a buy: two bars, 5 to 30 minutes."""
+    return min(1800, max(300, 2 * d))
 
 _cache = {}
 _cache_lock = threading.Lock()
@@ -125,23 +136,61 @@ def fetch_bars(symbol, rng="60d", interval="5m", ttl=60):
     sym = symbol.upper().replace(".", "-")
 
     def load():
-        doc = yahoo("/v8/finance/chart/%s?range=%s&interval=%s&includePrePost=false" % (sym, rng, interval))
+        if rng.startswith("p"):  # "p<start>-<end>": an explicit window in epoch seconds
+            start, end = rng[1:].split("-")
+            q = "period1=%s&period2=%s" % (start, end)
+        else:
+            q = "range=%s" % rng
+        doc = yahoo("/v8/finance/chart/%s?%s&interval=%s&includePrePost=false" % (sym, q, interval))
         res = (doc.get("chart") or {}).get("result")
         if not res:
             raise EngineError("Keine Daten für %s" % sym)
         res = res[0]
         q = (res.get("indicators") or {}).get("quote", [{}])[0]
         bars = []
-        step = 60 if interval == "1m" else BAR
+        step = STEP.get(interval, BAR)
         for i, t in enumerate(res.get("timestamp") or []):
             o, h, l, c = (q.get(k, [None])[i] for k in ("open", "high", "low", "close"))
             v = (q.get("volume") or [0])[i] or 0
             if None in (o, h, l, c) or t % step:
                 continue  # drop Yahoo's live tick and empty bars
-            bars.append({"t": t, "o": o, "h": h, "l": l, "c": c, "v": v})
+            bars.append({"t": t, "o": o, "h": h, "l": l, "c": c, "v": v, "d": step})
         return {"symbol": sym, "meta": res.get("meta", {}), "bars": bars}
 
     return _cached(("bars", sym, rng, interval), ttl, load)
+
+
+def history(symbol, minutes=5, ttl=55):
+    """Regular bars of the chosen length with as much history as Yahoo keeps.
+
+    1-minute bars come in 7-day pieces (Yahoo's limit per request) for about
+    30 calendar days; 2 to 30 minutes come in one 60-day request.
+    """
+    minutes = int(minutes)
+    if minutes not in BAR_MINUTES:
+        raise EngineError("Kerzenlänge %s Min wird nicht unterstützt (1, 2, 5, 15 oder 30)" % minutes)
+    if minutes != 1:
+        return fetch_bars(symbol, "60d", "%dm" % minutes, ttl=ttl)
+    sym = symbol.upper().replace(".", "-")
+
+    def load():
+        now = int(time.time())
+        top = (now // 3600 + 1) * 3600  # whole hours keep the older pieces cacheable
+        seen, meta = {}, {}
+        for k in range(3, -1, -1):  # four 7-day pieces, oldest first
+            end, start = top - k * 7 * 86400, top - (k + 1) * 7 * 86400
+            try:
+                part = fetch_bars(sym, "p%d-%d" % (start, min(end, now)), "1m", ttl=ttl if k == 0 else 3600)
+            except EngineError:
+                continue
+            meta = part["meta"] or meta
+            for b in part["bars"]:
+                seen[b["t"]] = b
+        if not seen:
+            raise EngineError("Keine 1-Minuten-Daten für %s" % sym)
+        return {"symbol": sym, "meta": meta, "bars": [seen[t] for t in sorted(seen)]}
+
+    return _cached(("hist1m", sym), ttl, load)
 
 
 def fetch_news(symbol, count=6):
@@ -167,7 +216,7 @@ def sessions(bars, now_ts=None):
     now_ts = now_ts if now_ts is not None else time.time()
     out = {}
     for b in bars:
-        if b["t"] + BAR > now_ts:
+        if b["t"] + b["d"] > now_ts:
             continue
         et = to_et(b["t"])
         m = minute_of_day(et)
@@ -236,13 +285,16 @@ def round_cent(x):
 
 
 def opening_range(day_bars, or_minutes):
-    n = or_minutes // 5
+    if not day_bars:
+        return None
+    d = day_bars[0]["d"]
+    n = max(1, -(-or_minutes * 60 // d))  # whole bars covering at least or_minutes
     if len(day_bars) < n or minute_of_day(to_et(day_bars[0]["t"])) != OPEN_MIN:
         return None
     first = day_bars[:n]
     return {"high": max(b["h"] for b in first), "low": min(b["l"] for b in first),
-            "avg_vol": sum(b["v"] for b in first) / n, "bars": n,
-            "end": day_bars[n - 1]["t"] + BAR}
+            "avg_vol": sum(b["v"] for b in first) / n, "bars": n, "minutes": n * d // 60,
+            "end": day_bars[n - 1]["t"] + d}
 
 
 def make_plan(entry, orr, params):
@@ -265,7 +317,7 @@ def find_trigger(day_bars, orr, params, rules):
     hi = hhmm_to_min(rules["no_entries_after"])
     for i in range(orr["bars"], len(day_bars)):
         b = day_bars[i]
-        close_min = minute_of_day(to_et(b["t"] + BAR))
+        close_min = minute_of_day(to_et(b["t"] + b["d"]))
         if close_min > hi:
             return None
         if b["c"] > orr["high"] and close_min >= lo:
@@ -284,14 +336,15 @@ def walk(day_bars, start, plan, flat_min):
     """Follow a trade bar by bar: stop first, then target, else flat at flat_by."""
     for j in range(start, len(day_bars)):
         b = day_bars[j]
-        end_min = minute_of_day(to_et(b["t"] + BAR))
+        end_t = b["t"] + b["d"]
+        end_min = minute_of_day(to_et(end_t))
         if b["l"] <= plan["stop"]:
-            return {"outcome": "stop", "r": -1.0, "exit": plan["stop"], "exit_t": b["t"] + BAR, "bars": j - start + 1}
+            return {"outcome": "stop", "r": -1.0, "exit": plan["stop"], "exit_t": end_t, "bars": j - start + 1}
         if b["h"] >= plan["target"]:
-            return {"outcome": "target", "r": plan["target_r"], "exit": plan["target"], "exit_t": b["t"] + BAR, "bars": j - start + 1}
+            return {"outcome": "target", "r": plan["target_r"], "exit": plan["target"], "exit_t": end_t, "bars": j - start + 1}
         if end_min >= flat_min:
             r = (b["c"] - plan["entry"]) / plan["risk"]
-            return {"outcome": "flat", "r": round(r, 3), "exit": b["c"], "exit_t": b["t"] + BAR, "bars": j - start + 1}
+            return {"outcome": "flat", "r": round(r, 3), "exit": b["c"], "exit_t": end_t, "bars": j - start + 1}
     return None  # still open
 
 
@@ -309,13 +362,13 @@ def backtest_day(day_bars, params, rules):
     res = walk(day_bars, i + 1, plan, hhmm_to_min(rules["flat_by"]))
     if not res:
         return None
-    return dict(res, entry_t=b["t"] + BAR, **plan)
+    return dict(res, entry_t=b["t"] + b["d"], **plan)
 
 
 def backtest(sess, params, rules, skip_date=None):
     trades = []
     for d, day in sess.items():
-        if d == skip_date or len(day) != FULL_BARS:
+        if d == skip_date or len(day) != full_bars(day[0]["d"]):
             continue
         t = backtest_day(day, params, rules)
         if t:
@@ -404,7 +457,8 @@ def analyze(symbol, strategy, today_trades=(), now_ts=None, mc_replays=2000, int
     sym = symbol.upper()
     blocked = strategy.get("blocked_symbols", {}).get(sym)
 
-    data = fetch_bars(sym, "60d", "5m", ttl=55)
+    minutes = int(rules.get("bar_minutes", 5))
+    data = history(sym, minutes)
     sess = sessions(data["bars"], now_ts)
     if not sess:
         raise EngineError("Keine Handelstage für %s" % sym)
@@ -416,6 +470,7 @@ def analyze(symbol, strategy, today_trades=(), now_ts=None, mc_replays=2000, int
     day = sess[day_key]
     live = day_key == today_iso and market_open
     flat_min = hhmm_to_min(rules["flat_by"])
+    bar = day[0]["d"]
 
     hist = backtest(sess, params, rules, skip_date=day_key)
     hist_sum = summarize(hist)
@@ -431,7 +486,8 @@ def analyze(symbol, strategy, today_trades=(), now_ts=None, mc_replays=2000, int
                           "above_vwap": day[-1]["c"] > day[-1]["vwap"], "above_ema": day[-1]["c"] > day[-1]["ema"]},
            "prev_close": None, "history": hist_sum,
            "history_trades": [{k: t[k] for k in ("date", "outcome", "r", "bars")} for t in hist[-15:]],
-           "blocked": blocked, "session_end": None}
+           "blocked": blocked, "session_end": None, "bar": bar, "bar_minutes": minutes,
+           "history_days": sum(1 for dd in sess.values() if len(dd) == full_bars(bar))}
     keys = list(sess)
     if keys.index(day_key) > 0:
         out["prev_close"] = sess[keys[keys.index(day_key) - 1]][-1]["c"]
@@ -450,31 +506,31 @@ def analyze(symbol, strategy, today_trades=(), now_ts=None, mc_replays=2000, int
     action, plan, entry_t, walked, i = "KEIN TRADE", None, None, None, None
 
     if not orr:
-        reasons.append("Eröffnungsspanne (%d Min) bildet sich noch" % params["or_minutes"])
+        reasons.append("Eröffnungsspanne (%d Min) bildet sich noch" % max(params["or_minutes"], minutes))
         out["decision"] = {"action": "WARTEN", "reasons": reasons, "state": "forming"}
         return out
 
     i = find_trigger(day, orr, params, rules)
     if i is not None:
         b = day[i]
-        state, entry, entry_t = "triggered", b["c"], b["t"] + BAR
+        state, entry, entry_t = "triggered", b["c"], b["t"] + b["d"]
         atr_v, vwap_v, rsi_v = atr(day[:i + 1]), b["vwap"], b.get("rsi")
     else:
-        close_min_last = minute_of_day(to_et(day[-1]["t"] + BAR))
+        close_min_last = minute_of_day(to_et(day[-1]["t"] + bar))
         if close_min_last >= hhmm_to_min(rules["no_entries_after"]) or not live:
             state = "expired"
             reasons.append("Kein Ausbruch über %.2f bis %s" % (orr["high"], rules["no_entries_after"]))
         else:
             state = "waiting"
-            entry, entry_t = round_cent(orr["high"] + 0.01), day[-1]["t"] + BAR
+            entry, entry_t = round_cent(orr["high"] + 0.01), day[-1]["t"] + bar
             atr_v, vwap_v, rsi_v = atr(day), day[-1]["vwap"], day[-1].get("rsi")
             dist = (orr["high"] - day[-1]["c"]) / day[-1]["c"] * 100
-            reasons.append("Einstieg erst, wenn eine 5-Min-Kerze ÜBER %.2f schließt (%.2f%% entfernt)" % (orr["high"], max(dist, 0)))
+            reasons.append("Einstieg erst, wenn eine %d-Min-Kerze ÜBER %.2f schließt (%.2f%% entfernt)" % (minutes, orr["high"], max(dist, 0)))
 
     opt = None
     if state != "expired":
         import optimize  # here, not at the top: optimize imports this module
-        start_slot = (minute_of_day(to_et(entry_t)) - OPEN_MIN) // 5
+        start_slot = (minute_of_day(to_et(entry_t)) - OPEN_MIN) * 60 // bar
         opt = optimize.choose(sess, day_key, entry, orr, atr_v, vwap_v, start_slot, params, rules, acct, replays=mc_replays)
         if opt is None:
             reasons.append("Kein Stop passt: Spanne zu eng oder zu weit, oder zu wenig Historie")
@@ -498,7 +554,7 @@ def analyze(symbol, strategy, today_trades=(), now_ts=None, mc_replays=2000, int
                "avg_r": c["ev_sim"], "ev_net": c["ev_net"], "ev_hist": c["ev_hist"], "n_hist": c["n_hist"],
                "hist_win": c["hist_win"], "cost_r": c["cost_r"], "ev_usd": round(c["ev_net"] * plan["risk"] * sz["shares"], 2),
                "target_share": round(share, 3), "break_even": round(be, 3), "edge_pp": round((share - be) * 100, 1),
-               "median_exit_t": entry_t + (mstep + 1) * BAR if mstep is not None else out["flat_ts"]}
+               "median_exit_t": entry_t + (mstep + 1) * bar if mstep is not None else out["flat_ts"]}
         sim["verdict"] = verdict(sim["edge_pp"])
         import optimize
         sim["fan"] = optimize.fan(opt["paths"], plan["entry"])
@@ -514,14 +570,14 @@ def analyze(symbol, strategy, today_trades=(), now_ts=None, mc_replays=2000, int
             out["result"] = walked
 
         # ---- the checklist: when is it really worth it?
-        fresh = state == "triggered" and now_ts - entry_t <= FRESH_SECONDS
-        regime = market_regime(entry_t, now_ts) if sym != "SPY" else (entry > vwap_v)
+        fresh = state == "triggered" and now_ts - entry_t <= fresh_seconds(bar)
+        regime = market_regime(entry_t, now_ts, minutes) if sym != "SPY" else (entry > vwap_v)
         read = (intel or {}).get("read")
         min_ev = strategy.get("min_ev_r", 0.10)
         hist_known = hist_sum["n"] >= 8
         checks = [
             {"key": "signal", "hard": True, "ok": state == "triggered",
-             "label": "Ausbruch bestätigt: 5-Min-Kerze schließt über %.2f" % orr["high"]},
+             "label": "Ausbruch bestätigt: %d-Min-Kerze schließt über %.2f" % (minutes, orr["high"])},
             {"key": "ev", "hard": True, "ok": c["ev_net"] >= min_ev,
              "label": "Erwartung nach Kosten mindestens %+.2fR" % min_ev,
              "detail": "%+.2fR ≈ %+.2f $ pro Trade" % (c["ev_net"], sim["ev_usd"])},
@@ -583,14 +639,14 @@ def analyze(symbol, strategy, today_trades=(), now_ts=None, mc_replays=2000, int
     return out
 
 
-def market_regime(at_ts, now_ts):
+def market_regime(at_ts, now_ts, minutes=5):
     """Was SPY above its session VWAP on the last closed bar at or before at_ts?"""
     try:
-        sess = sessions(fetch_bars("SPY", "60d", "5m", ttl=55)["bars"], now_ts)
+        sess = sessions(history("SPY", minutes)["bars"], now_ts)
     except EngineError:
         return None
     day = sess.get(to_et(at_ts).date().isoformat())
     if not day:
         return None
-    bars = [b for b in day if b["t"] + BAR <= at_ts] or day[:1]
+    bars = [b for b in day if b["t"] + b["d"] <= at_ts] or day[:1]
     return bars[-1]["c"] > bars[-1]["vwap"]

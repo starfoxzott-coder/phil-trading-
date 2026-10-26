@@ -146,8 +146,9 @@ def read_shot(body):
 
 def state():
     strategy = learn.load_strategy()
-    rows = learn.read_journal()
-    return {"strategy": strategy, "score": learn.score(rows), "journal": rows[-60:][::-1],
+    m = strategy["active_minutes"]
+    rows = [r for r in learn.read_journal() if r.get("bar_minutes", 5) == m]
+    return {"strategy": strategy, "score": learn.score(rows), "journal": rows[-60:][::-1], "bar_minutes": m,
             "history": learn.history()[-40:][::-1], "describe": learn.describe(strategy["params"]),
             "now_et": engine.et_now().strftime("%Y-%m-%d %H:%M")}
 
@@ -161,6 +162,10 @@ def save_settings(body):
         if k in s["rules"]:
             if k in ("min_reward_risk", "cost_bps"):
                 s["rules"][k] = float(v)
+            elif k == "bar_minutes":
+                if int(float(v)) not in engine.BAR_MINUTES:
+                    raise ValueError("Kerzenlänge: 1, 2, 5, 15 oder 30 Minuten")
+                s["rules"][k] = int(float(v))
             elif k == "min_quality":
                 if str(v).strip().upper() not in ("A", "B", "C"):
                     raise ValueError("Mindest-Qualität: A, B oder C")
@@ -178,16 +183,17 @@ def save_settings(body):
 
 
 def auto_learner():
-    """Learn once per trading day after the close."""
+    """Learn once per trading day after the close, for every bar length in use."""
     while True:
         try:
             now = engine.et_now()
-            s = learn.load_strategy()
-            done = (s.get("learned_at") or "")[:10]
-            if now.weekday() < 5 and engine.minute_of_day(now) >= 16 * 60 + 5 and done != now.date().isoformat():
-                with _lock:
-                    learn.cycle()
-                print("[phil] Lernzyklus fertig", now.strftime("%H:%M"), flush=True)
+            if now.weekday() < 5 and engine.minute_of_day(now) >= 16 * 60 + 5:
+                for m in learn.intervals_in_use():
+                    done = (learn.load_strategy(m).get("learned_at") or "")[:10]
+                    if done != now.date().isoformat():
+                        with _lock:
+                            learn.cycle(minutes=m)
+                        print("[phil] Lernzyklus fertig (%d-Min-Kerzen)" % m, now.strftime("%H:%M"), flush=True)
         except Exception:
             traceback.print_exc()
         time.sleep(600)

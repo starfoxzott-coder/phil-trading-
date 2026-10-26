@@ -47,7 +47,7 @@ MISTAKES = {
 }
 RULE_TEXT = {
     "chased": "Kaufe nur bis zum Kauf-Limit. Liegt der Kurs darüber, lass den Trade aus.",
-    "early_entry": "Warte, bis die 5-Minuten-Kerze wirklich über dem Spannenhoch geschlossen hat.",
+    "early_entry": "Warte, bis die Kerze wirklich über dem Spannenhoch geschlossen hat.",
     "wider_stop": "Setze den Stop genau dort, wo der Plan ihn hat, nicht tiefer.",
     "moved_stop": "Verschiebe den Stop nach dem Kauf nie nach unten.",
     "early_exit": "Lass den Trade bis Ziel, Stop oder Glattstellzeit laufen. Nicht vorher verkaufen.",
@@ -155,6 +155,7 @@ def open_trade(body, analysis=None):
                      "buy_limit": (analysis.get("order") or {}).get("buy_limit"),
                      "shares": (analysis.get("size") or {}).get("shares"),
                      "action": analysis["decision"]["action"], "grade": (analysis.get("quality") or {}).get("grade"),
+                     "bar_minutes": analysis.get("bar_minutes", 5),
                      "ev_r": (analysis.get("sim") or {}).get("ev_net")}
         t["signal_id"] = (analysis.get("signal") or {}).get("id")
     risk = entry - (stop if stop is not None else (t.get("plan") or {}).get("stop", entry * 0.99))
@@ -198,7 +199,7 @@ def plan_r(t, rules):
     if not p:
         return None
     try:
-        sess = engine.sessions(engine.fetch_bars(t["symbol"], "60d", "5m")["bars"])
+        sess = engine.sessions(engine.history(t["symbol"], p.get("bar_minutes", 5))["bars"])
     except engine.EngineError:
         return None
     day = sess.get(t["date"])
@@ -283,8 +284,10 @@ def close_trade(trade_id, body, strategy):
 
 def auto_exit(t, rules):
     """Your stop and target walked through the day's bars, for a trade you did not close by hand."""
-    try:
-        sess = engine.sessions(engine.fetch_bars(t["symbol"], "60d", "5m")["bars"])
+    try:  # 1-minute bars where Yahoo still has them: the closest look at what happened
+        sess = engine.sessions(engine.history(t["symbol"], 1)["bars"])
+        if t["date"] not in sess:
+            sess = engine.sessions(engine.history(t["symbol"], 5)["bars"])
     except engine.EngineError:
         return None
     day = sess.get(t["date"])
@@ -294,7 +297,7 @@ def auto_exit(t, rules):
     target = t.get("target") or (t.get("plan") or {}).get("target")
     if not stop or not target:
         return None
-    start = next((k for k, b in enumerate(day) if b["t"] + engine.BAR > t["entry_ts"]), None)
+    start = next((k for k, b in enumerate(day) if b["t"] + b["d"] > t["entry_ts"]), None)
     if start is None:
         return None
     risk = t["entry"] - stop

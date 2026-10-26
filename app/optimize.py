@@ -3,7 +3,7 @@
 For one entry it scores every pair of stop rule x target R on two kinds of evidence:
 
   simulation   2,000 replays of the rest of today built from this stock's own
-               5-minute bars of the last 60 days (the trader-timemachine method).
+               bars (of the chosen length) of the history Yahoo keeps (the trader-timemachine method).
                Every pair is scored on the SAME paths, so the comparison is fair.
   history      this stock's own past breakouts under the same entry rule, each
                re-walked bar by bar with that stop and target.
@@ -66,14 +66,19 @@ def plan_for(kind, r_mult, entry, orr, atr_val, vwap):
 
 # ---------------------------------------------------------------- simulation paths
 
-def paths(sess, today, start_slot, end_slot, replays=2000, seed=19, window=3):
-    """Relative paths from the entry: running max high, running min low, close, per step."""
-    full = [day for d, day in sess.items() if d != today and len(day) == engine.FULL_BARS]
+def paths(sess, today, start_slot, end_slot, bar, replays=2000, seed=19):
+    """Relative paths from the entry: running max high, running min low, close, per step.
+
+    Each step draws a past bar from about the same time of day (within 15 minutes).
+    """
+    nb = engine.full_bars(bar)
+    window = max(1, 900 // bar)
+    full = [day for d, day in sess.items() if d != today and len(day) == nb]
     if len(full) < 10 or end_slot <= start_slot:
         return None
-    pool = [[] for _ in range(engine.FULL_BARS)]
+    pool = [[] for _ in range(nb)]
     for day in full:
-        for j in range(1, engine.FULL_BARS):
+        for j in range(1, nb):
             pc = day[j - 1]["c"]
             b = day[j]
             pool[j].append((b["h"] / pc, b["l"] / pc, b["c"] / pc))
@@ -83,7 +88,7 @@ def paths(sess, today, start_slot, end_slot, replays=2000, seed=19, window=3):
         px, mh, ml = 1.0, 0.0, 9e9
         his, neg_los, closes = [], [], []
         for slot in range(start_slot, end_slot):
-            j = min(engine.FULL_BARS - 1, max(1, slot + rng.randint(-window, window)))
+            j = min(nb - 1, max(1, slot + rng.randint(-window, window)))
             h, l, c = rng.choice(pool[j])
             mh, ml = max(mh, px * h), min(ml, px * l)
             px *= c
@@ -135,7 +140,7 @@ def fan(P, entry):
 def past_breakouts(sess, params, rules, skip_date):
     out = []
     for d, day in sess.items():
-        if d == skip_date or len(day) != engine.FULL_BARS:
+        if d == skip_date or len(day) != engine.full_bars(day[0]["d"]):
             continue
         orr = engine.opening_range(day, params["or_minutes"])
         if not orr:
@@ -163,8 +168,9 @@ def score_history(breakouts, kind, r_mult, flat_min):
 
 def choose(sess, today, entry, orr, atr_val, vwap, start_slot, params, rules, acct, replays=2000):
     flat_min = engine.hhmm_to_min(rules["flat_by"])
-    end_slot = min(engine.FULL_BARS, (flat_min - engine.OPEN_MIN) // 5)
-    P = paths(sess, today, start_slot, end_slot, replays)
+    bar = next(iter(sess.values()))[0]["d"]
+    end_slot = min(engine.full_bars(bar), (flat_min - engine.OPEN_MIN) * 60 // bar)
+    P = paths(sess, today, start_slot, end_slot, bar, replays)
     if not P:
         return None
     hist = past_breakouts(sess, params, rules, today)

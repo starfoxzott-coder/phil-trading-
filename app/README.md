@@ -25,11 +25,34 @@ Nur Python 3.9+ und die Standardbibliothek, keine Installation. Kursdaten: Yahoo
 - **Zeitleiste unten**: oben New-York-Zeit, darunter deine Zeit; der farbige Balken ist die
   Positionsdauer.
 
+## Kerzenlänge: 1, 2, 5, 15 oder 30 Minuten
+
+Oben in der Kopfzeile stellst du unter „Kerzen“ ein, in welchem Zeitrahmen die App rechnet. Alles
+richtet sich danach: Eröffnungsspanne, Einstieg (Kerzenschluss über dem Spannenhoch),
+Indikatoren (ATR, EMA, RSI pro Kerze), Simulation, Backtest und die gelernte Regel.
+
+| Kerzen | Historie für Simulation und Lernen | Charakter |
+|---|---|---|
+| 1 Min | etwa 20 Handelstage (Yahoo hält 1-Minuten-Daten nur rund 30 Tage) | viele, schnelle Signale, enge Stops; Spread zählt mehr |
+| 2 Min | etwa 30 Handelstage | schneller als 5 Min |
+| 5 Min | 60 Tage | Standard, guter Kompromiss |
+| 15 Min | 60 Tage | ruhiger, weniger Fehlausbrüche, weniger Signale |
+| 30 Min | 60 Tage | sehr ruhig; die Spanne ist mindestens 30 Minuten lang |
+
+- Die Eröffnungsspanne wird auf ganze Kerzen aufgerundet (15 Min bei 2-Min-Kerzen = 16 Min,
+  bei 30-Min-Kerzen = 30 Min).
+- Ein Ausbruch gilt zwei Kerzen lang als frisch (mindestens 5, höchstens 30 Minuten), danach
+  heißt es LÄUFT.
+- **Jede Kerzenlänge lernt getrennt**: eigene Regel, eigene Mindest-Erwartung, eigene gesperrte
+  Ticker, eigenes Signal-Journal. Abends lernt die App für jede Kerzenlänge, die du benutzt hast.
+- Deine eigenen Trades merken sich, mit welcher Kerzenlänge du gehandelt hast. Ein offen
+  gelassener Trade wird mit 1-Minuten-Daten abgerechnet, solange Yahoo sie noch hat.
+
 ## Echtzeit und Zusatzdaten
 
 - **Live-Kerzen**: Während der Börsenzeit verbindet sich der Browser per WebSocket mit
   Hyperliquid (dort handelt Liquid die Aktien als Perpetuals, z. B. `xyz:TSLA`) und zeichnet
-  die gerade laufende 5-Minuten-Kerze hohl, bis sie schließt, plus eine blaue Live-Kurslinie.
+  die gerade laufende Kerze hohl, bis sie schließt, plus eine blaue Live-Kurslinie.
   Für SPY und QQQ gibt es keinen 1:1-Perp; dort kommen die Live-Kerzen alle 5 Sekunden aus
   Yahoos 1-Minuten-Daten. Schließt eine Kerze, prüft die App die Entscheidung neu. Der
   Perp-Kurs kann ein paar Cent vom Börsenkurs abweichen; Einstieg, Stop und Ziel rechnet die
@@ -64,7 +87,7 @@ Heatmap „Warum genau dieser Stop und dieses Ziel?“ zeigt alle 30 Zellen.
 
 Gehandelt wird nur, wenn alle **Pflichtpunkte** stimmen:
 
-1. Eine 5-Minuten-Kerze hat über dem Spannenhoch geschlossen, vor höchstens 10 Minuten
+1. Eine Kerze hat über dem Spannenhoch geschlossen, vor höchstens zwei Kerzen (5 bis 30 Minuten)
 2. Erwartung nach Kosten mindestens +0,10R (die Lernschleife erhöht das, wenn die Vorhersagen zu
    optimistisch waren)
 3. Deine Risikoregeln sind erfüllt, und der Ticker ist nicht gesperrt
@@ -121,7 +144,7 @@ nachjagen), Stop-Market-Verkauf, Take-Profit-Limit und spätestens 15:55 New Yor
 | **KEIN TRADE** | Signal da, aber Simulation, Historie oder dein Risiko-Check sagen nein |
 | **VORBEI** | Der heutige Trade ist schon durch Stop, Ziel oder Glattstellen beendet |
 
-Die Regeln kommen aus den trader-Skills: Einstieg wie **trader-entry** (erste 5-Min-Kerze, die
+Die Regeln kommen aus den trader-Skills: Einstieg wie **trader-entry** (erste Kerze, die
 über dem Hoch der Eröffnungsspanne *schließt*), Stop/Ziel wie **trader-exit**, die 2.000
 Replays wie **trader-timemachine**, Stückzahl wie **trader-budget**, Prüfung wie
 **trader-risk**, Schlagzeilen wie **trader-news**. Gekauft wird nur long. Die App platziert
@@ -152,7 +175,7 @@ im Tab „Lernen“ ein. Die Lernschleife fasst sie nie an.
 ## Ehrlich gesagt
 
 Opening-Range-Breakouts auf großen Aktien sind im Schnitt nahe Break-even. Die App sagt
-deshalb oft „KEIN TRADE“; das ist der Sinn eines Filters. 60 Tage 5-Minuten-Daten sind
+deshalb oft „KEIN TRADE“; das ist der Sinn eines Filters. 60 Tage Kursdaten (bei 1-Minuten-Kerzen nur etwa 20) sind
 wenig Historie, und eine Simulation ist keine Garantie: ein Gap kann über den Stop springen.
 Erst handeln, wenn das Journal über Wochen positiv ist, und dann klein.
 
