@@ -35,7 +35,17 @@ WEB = os.path.join(os.path.dirname(os.path.abspath(__file__)), "web")
 ORDER = {"KAUFEN": 0, "LÄUFT": 1, "WARTEN": 1, "BEOBACHTEN": 2, "VORBEI": 3, "KEIN TRADE": 4}
 _lock = threading.Lock()
 HEAD = (b'<!doctype html><html lang="de"><head><meta charset="utf-8">'
-        b'<meta name="viewport" content="width=device-width, initial-scale=1, viewport-fit=cover"></head><body>')
+        b'<meta name="viewport" content="width=device-width, initial-scale=1, viewport-fit=cover">'
+        # "add to home screen" on a phone: own icon, full screen, no browser bar
+        b'<link rel="manifest" href="/manifest.webmanifest"><link rel="apple-touch-icon" href="/icon-180.png">'
+        b'<meta name="apple-mobile-web-app-capable" content="yes"><meta name="mobile-web-app-capable" content="yes">'
+        b'<meta name="apple-mobile-web-app-status-bar-style" content="black-translucent">'
+        b'<meta name="apple-mobile-web-app-title" content="Phil"><meta name="theme-color" content="#0d1211">'
+        b'</head><body>')
+MANIFEST = {"name": "Phil Day-Trade", "short_name": "Phil", "start_url": "/", "display": "standalone",
+            "background_color": "#0d1211", "theme_color": "#0d1211", "lang": "de",
+            "icons": [{"src": "/icon-180.png", "sizes": "180x180", "type": "image/png"},
+                      {"src": "/icon-512.png", "sizes": "512x512", "type": "image/png"}]}
 
 
 def analyze(symbol, replays=2000, news=True, now_ts=None):
@@ -360,6 +370,11 @@ class Handler(BaseHTTPRequestHandler):
             with open(os.path.join(WEB, "index.html"), "rb") as f:
                 page = HEAD + f.read() + b"</body></html>"
             return self._send(200, page, "text/html; charset=utf-8")
+        if u.path == "/manifest.webmanifest":
+            return self._send(200, json.dumps(MANIFEST).encode(), "application/manifest+json")
+        if u.path in ("/icon-180.png", "/icon-512.png"):
+            with open(os.path.join(WEB, u.path[1:]), "rb") as f:
+                return self._send(200, f.read(), "image/png")
         if u.path == "/api/analyze":
             return self._guard(lambda: analyze(q.get("symbol", "SPY")))
         if u.path == "/api/live":

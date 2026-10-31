@@ -14,6 +14,22 @@ python3 app/server.py learn    # einen Lernzyklus von Hand
 Nur Python 3.9+ und die Standardbibliothek, keine Installation. Kursdaten: Yahoo Finance
 (kostenlos, inoffiziell, kann etwas verzögert sein).
 
+## Auf dem Handy (PC zu Hause läuft dauerhaft)
+
+Sicher und ohne die App ins offene Internet zu stellen, mit **Tailscale** (privates Netz nur für
+deine Geräte, privat kostenlos):
+
+1. Tailscale auf dem PC und auf dem Handy installieren (tailscale.com, App Store / Play Store) und
+   auf beiden mit demselben Konto anmelden.
+2. Auf dem PC die App ganz normal starten: `python app/server.py --no-browser` (sie hört nur auf
+   den PC selbst).
+3. Auf dem PC einmalig: `tailscale serve --bg 8787`. Tailscale zeigt dann eine Adresse wie
+   `https://mein-pc.tail1234.ts.net`, mit HTTPS und nur für deine Geräte erreichbar.
+4. Diese Adresse am Handy öffnen und „Zum Home-Bildschirm“ wählen (iPhone: Teilen-Knopf; Android:
+   Menü). Dann startet Phil wie eine App, mit eigenem Symbol und ohne Browserleiste.
+
+Nie eine Portfreigabe im Router einrichten: Die App hat keinen Login.
+
 ## Aufbau
 
 - **Trading**: links (am Handy oben zum Wischen) die Watchlist, gruppiert nach „Handeln“,
