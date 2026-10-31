@@ -90,7 +90,7 @@ def live_candles(symbol, minutes=30):
 def intel(symbol):
     """Liquid positioning that Claude saved, with its age. None when there is none."""
     try:
-        with open(INTEL) as f:
+        with open(INTEL, encoding="utf-8") as f:
             doc = json.load(f)
     except (OSError, ValueError):
         return None

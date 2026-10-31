@@ -64,14 +64,14 @@ RULE_MIN = 3  # occurrences before a mistake becomes a personal rule
 def _read():
     if not os.path.exists(FILE):
         return []
-    with open(FILE) as f:
+    with open(FILE, encoding="utf-8") as f:
         return [json.loads(line) for line in f if line.strip()]
 
 
 def _write(rows):
     os.makedirs(DATA, exist_ok=True)
     tmp = FILE + ".tmp"
-    with open(tmp, "w") as f:
+    with open(tmp, "w", encoding="utf-8") as f:
         for r in rows:
             f.write(json.dumps(r, ensure_ascii=False) + "\n")
     os.replace(tmp, FILE)

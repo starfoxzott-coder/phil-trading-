@@ -58,7 +58,7 @@ def bar_minutes(s):
 
 def load_strategy(minutes=None):
     """The strategy with the learned state of `minutes` (default: your chosen bar length)."""
-    with open(STRATEGY) as f:
+    with open(STRATEGY, encoding="utf-8") as f:
         s = json.load(f)
     by = s.setdefault("by_interval", {})
     if not by and "params" in s:  # older file: its learned state belongs to 5-minute bars
@@ -75,7 +75,7 @@ def save_strategy(s):
     m = str(s.pop("active_minutes", bar_minutes(s)))
     s.setdefault("by_interval", {})[m] = {k: s.pop(k) for k in LEARNED if k in s}
     tmp = STRATEGY + ".tmp"
-    with open(tmp, "w") as f:
+    with open(tmp, "w", encoding="utf-8") as f:
         json.dump(s, f, indent=2, ensure_ascii=False)
         f.write("\n")
     os.replace(tmp, STRATEGY)
@@ -84,13 +84,13 @@ def save_strategy(s):
 def read_journal():
     if not os.path.exists(JOURNAL):
         return []
-    with open(JOURNAL) as f:
+    with open(JOURNAL, encoding="utf-8") as f:
         return [json.loads(line) for line in f if line.strip()]
 
 
 def write_journal(rows):
     tmp = JOURNAL + ".tmp"
-    with open(tmp, "w") as f:
+    with open(tmp, "w", encoding="utf-8") as f:
         for r in rows:
             f.write(json.dumps(r) + "\n")
     os.replace(tmp, JOURNAL)
@@ -98,7 +98,7 @@ def write_journal(rows):
 
 def _append(path, text):
     os.makedirs(DATA, exist_ok=True)
-    with open(path, "a") as f:
+    with open(path, "a", encoding="utf-8") as f:
         f.write(text)
 
 
@@ -361,7 +361,7 @@ def cycle(now_ts=None, minutes=None):
 
 def intervals_in_use():
     """Bar lengths worth a nightly cycle: the one you trade plus any with learned state."""
-    with open(STRATEGY) as f:
+    with open(STRATEGY, encoding="utf-8") as f:
         s = json.load(f)
     used = {bar_minutes(s)} | {int(m) for m in s.get("by_interval", {})}
     return sorted(m for m in used if m in engine.BAR_MINUTES)
@@ -370,5 +370,5 @@ def intervals_in_use():
 def history():
     if not os.path.exists(HISTORY):
         return []
-    with open(HISTORY) as f:
+    with open(HISTORY, encoding="utf-8") as f:
         return [json.loads(l) for l in f if l.strip()]

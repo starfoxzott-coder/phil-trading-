@@ -424,6 +424,11 @@ class Handler(BaseHTTPRequestHandler):
 
 
 def main():
+    for stream in (sys.stdout, sys.stderr):  # a Windows service log may not take every character
+        try:
+            stream.reconfigure(errors="replace")
+        except (AttributeError, ValueError):
+            pass
     ap = argparse.ArgumentParser(description=__doc__, formatter_class=argparse.RawDescriptionHelpFormatter)
     ap.add_argument("cmd", nargs="?", default="serve", choices=["serve", "learn", "scan"])
     ap.add_argument("--port", type=int, default=8787)

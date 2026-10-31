@@ -115,7 +115,7 @@ def sync_config(strategy):
     os.makedirs(os.path.join(WORK, "trader", "state"), exist_ok=True)
     path = os.path.join(WORK, "trader", "config.json")
     tmp = path + ".tmp"
-    with open(tmp, "w") as f:
+    with open(tmp, "w", encoding="utf-8") as f:
         json.dump(cfg, f, indent=2)
     os.replace(tmp, path)
     return cfg
@@ -127,14 +127,14 @@ def run(strategy, name, args, timeout=180, as_json=True):
     if not path:
         return {"ok": False, "missing": True, "error": "Skill trader-%s nicht gefunden (siehe Tab Markt → Skills)" % name}
     sync_config(strategy)
-    env = dict(os.environ)
+    env = dict(os.environ, PYTHONUTF8="1", PYTHONIOENCODING="utf-8")  # Windows: UTF-8 in and out of the skills
     ua = (strategy.get("sec_user_agent") or "").strip()
     if ua:
         env["SEC_USER_AGENT"] = ua
     t0 = time.time()
     try:
         p = subprocess.run([sys.executable, path] + [str(a) for a in args], cwd=WORK, env=env,
-                           capture_output=True, text=True, timeout=timeout)
+                           capture_output=True, text=True, encoding="utf-8", errors="replace", timeout=timeout)
     except subprocess.TimeoutExpired:
         return {"ok": False, "error": "trader-%s brauchte länger als %d s" % (name, timeout)}
     out = {"ok": p.returncode == 0, "code": p.returncode, "seconds": round(time.time() - t0, 1),
@@ -156,7 +156,7 @@ def run(strategy, name, args, timeout=180, as_json=True):
 
 def read_work(rel):
     try:
-        with open(os.path.join(WORK, rel)) as f:
+        with open(os.path.join(WORK, rel), encoding="utf-8") as f:
             return json.load(f)
     except (OSError, ValueError):
         return None
@@ -378,7 +378,7 @@ def start_job(name, fn):
         if j["state"] == "done":  # keep the last good result across restarts
             os.makedirs(os.path.join(WORK, "jobs"), exist_ok=True)
             tmp = os.path.join(WORK, "jobs", name + ".json.tmp")
-            with open(tmp, "w") as f:
+            with open(tmp, "w", encoding="utf-8") as f:
                 json.dump(j, f)
             os.replace(tmp, os.path.join(WORK, "jobs", name + ".json"))
 
@@ -390,7 +390,7 @@ def job(name):
     j = JOBS.get(name)
     if not j and re.match(r"^[a-z]+$", name or ""):
         try:
-            with open(os.path.join(WORK, "jobs", name + ".json")) as f:
+            with open(os.path.join(WORK, "jobs", name + ".json"), encoding="utf-8") as f:
                 j = JOBS[name] = json.load(f)
         except (OSError, ValueError):
             j = None
